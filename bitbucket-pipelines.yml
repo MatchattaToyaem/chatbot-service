@@ -24,7 +24,11 @@ definitions:
               --username $AZURE_CLIENT_ID
               --password $AZURE_CLIENT_SECRET
               --tenant $AZURE_TENANT_ID
-          - sed -i "s/PLACEHOLDER/$ACR_PASSWORD/g" grpc-server.yaml
+
+          # Inject both secrets into yaml
+          - sed -i "s/PLACEHOLDER_ACR/$ACR_PASSWORD/g" grpc-server.yaml
+          - sed -i "s/PLACEHOLDER_HF/$HF_TOKEN/g" grpc-server.yaml
+
           - |
             if az containerapp show --name grpc-server --resource-group ai-platform 2>/dev/null; then
               az containerapp update \
