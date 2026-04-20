@@ -11,6 +11,8 @@ from huggingface_hub import InferenceClient
 
 # Read Hugging Face API token from environment variable
 HUGGINGFACEHUB_API_TOKEN = os.environ.get("HUGGINGFACEHUB_API_TOKEN", "")
+if not HUGGINGFACEHUB_API_TOKEN:
+    raise RuntimeError("HUGGINGFACEHUB_API_TOKEN environment variable is not set")
 
 class AIServiceServicer(chatbot_service_pb2_grpc.HuggingFaceServiceServicer):
     def __init__(self):
