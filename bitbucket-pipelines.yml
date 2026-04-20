@@ -1,0 +1,48 @@
+image: atlassian/default-image:4
+
+definitions:
+  steps:
+    - step: &build-push
+        name: Build and Push to ACR
+        services:
+          - docker
+        script:
+          - echo $ACR_PASSWORD | docker login oconnoraiplatform.azurecr.io
+              --username $ACR_USERNAME
+              --password-stdin
+          - docker build -t oconnoraiplatform.azurecr.io/grpc-server:$BITBUCKET_COMMIT .
+          - docker tag oconnoraiplatform.azurecr.io/grpc-server:$BITBUCKET_COMMIT
+              oconnoraiplatform.azurecr.io/grpc-server:latest
+          - docker push oconnoraiplatform.azurecr.io/grpc-server:$BITBUCKET_COMMIT
+          - docker push oconnoraiplatform.azurecr.io/grpc-server:latest
+
+    - step: &deploy
+        name: Deploy to Azure Container Apps
+        script:
+          - curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+          - az login --service-principal
+              --username $AZURE_CLIENT_ID
+              --password $AZURE_CLIENT_SECRET
+              --tenant $AZURE_TENANT_ID
+          - sed -i "s/PLACEHOLDER/$ACR_PASSWORD/g" grpc-server.yaml
+          - |
+            if az containerapp show --name grpc-server --resource-group ai-platform 2>/dev/null; then
+              az containerapp update \
+                --name grpc-server \
+                --resource-group ai-platform \
+                --image oconnoraiplatform.azurecr.io/grpc-server:$BITBUCKET_COMMIT
+            else
+              az containerapp create \
+                --name grpc-server \
+                --resource-group ai-platform \
+                --yaml grpc-server.yaml
+            fi
+
+pipelines:
+  default:
+    - step: *build-push
+
+  branches:
+    main:
+      - step: *build-push
+      - step: *deploy
