@@ -9,8 +9,8 @@ import chatbot_service_pb2_grpc
 # Import Hugging Face InferenceClient
 from huggingface_hub import InferenceClient
 
-# Set your Hugging Face API token (or pass it via environment variables)
-os.environ["HUGGINGFACEHUB_API_TOKEN"] = "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"
+# Read Hugging Face API token from environment variable
+HUGGINGFACEHUB_API_TOKEN = os.environ.get("HUGGINGFACEHUB_API_TOKEN", "")
 
 class AIServiceServicer(chatbot_service_pb2_grpc.HuggingFaceServiceServicer):
     def __init__(self):
@@ -18,7 +18,7 @@ class AIServiceServicer(chatbot_service_pb2_grpc.HuggingFaceServiceServicer):
         self.client = InferenceClient(
             model="mistralai/Mistral-7B-Instruct-v0.2",
             provider="featherless-ai",
-            token=os.environ["HUGGINGFACEHUB_API_TOKEN"],
+            token=HUGGINGFACEHUB_API_TOKEN,
         )
         print("Model initialized successfully.")
 
