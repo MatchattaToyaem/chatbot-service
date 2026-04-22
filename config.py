@@ -21,7 +21,9 @@ class ChromaConfig:
     )
     port: int = int(os.getenv("CHROMA_PORT", "443"))
     ssl: bool = os.getenv("CHROMA_SSL", "true").lower() == "true"
-    collection: str = os.getenv("CHROMA_COLLECTION", "oconnors_ims")
+    collection: str = os.getenv("CHROMA_COLLECTION", "oconnors_ims_bge_m3")
+    mode: str = os.getenv("CHROMA_MODE", "remote")
+    local_path: str = os.getenv("CHROMA_LOCAL_PATH", "./chromadb_local")
 
 
 @dataclass(frozen=True)

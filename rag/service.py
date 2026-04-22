@@ -64,10 +64,11 @@ class RAGService:
         # ChromaDB store (connects to Mat's Azure server)
         self._store = ChromaStore(
             collection_name=self._config.chroma.collection,
-            mode="remote",
+            mode=self._config.chroma.mode,
             host=self._config.chroma.host,
             port=self._config.chroma.port,
             ssl=self._config.chroma.ssl,
+            local_path=self._config.chroma.local_path,
         )
 
         # Reranker with domain-aware scoring
