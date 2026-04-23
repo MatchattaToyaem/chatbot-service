@@ -2,9 +2,9 @@
 RAG Service — the main orchestrator for the O'Connors IMS chatbot.
 
 Ties together:
-    1. Retrieval (BGE-M3 embedding -> ChromaDB query)
-    2. Reranking (subfolder hints, keyword boosts, source diversity)
-    3. Generation (Ollama llama3.2 with domain-specific prompts)
+    1. Retrieval (BGE-M3 embedding -> Hybrid BM25 + ChromaDB vector search)
+    2. Ranking (Reciprocal Rank Fusion from hybrid retriever)
+    3. Generation (Ollama llama3.1:8b with domain-specific prompts)
 
 This is the single class Mat's backend calls for end-to-end Q&A.
 """
@@ -19,6 +19,7 @@ from ingest.embedder import Embedder
 from ingest.store import ChromaStore
 from rag.reranker import Reranker, RankedResult
 from rag.generator import AnswerGenerator, GeneratedAnswer
+from rag.hybrid_retriever import HybridRetriever
 
 logger = logging.getLogger(__name__)
 
@@ -48,11 +49,10 @@ class RAGService:
 
     Pipeline:
         1. Embed the question with BGE-M3.
-        2. Retrieve top-30 chunks from ChromaDB (over-fetch for reranking).
-        3. Rerank using subfolder hints and keyword boosts.
-        4. Take top-5 reranked results.
-        5. Generate answer via Ollama with domain-specific prompts.
-        6. Return answer + sources + confidence score.
+        2. Hybrid retrieve: BM25 keyword + vector search, fused with RRF.
+        3. Take top-5 fused results (reranker bypassed — RRF handles ranking).
+        4. Generate answer via Ollama with domain-specific prompts.
+        5. Return answer + sources + confidence score.
     """
 
     def __init__(self, config: Optional[AppConfig] = None):
@@ -61,7 +61,7 @@ class RAGService:
         # Shared embedder (same instance used by both ingest and query)
         self._embedder = Embedder(model_name=self._config.embedding.model_name)
 
-        # ChromaDB store (connects to Mat's Azure server)
+        # ChromaDB store (connects to Mat's Azure server or local)
         self._store = ChromaStore(
             collection_name=self._config.chroma.collection,
             mode=self._config.chroma.mode,
@@ -71,14 +71,15 @@ class RAGService:
             local_path=self._config.chroma.local_path,
         )
 
-        # Reranker with domain-aware scoring
+        # Reranker with domain-aware scoring (kept for future use,
+        # currently bypassed in favor of RRF ranking from hybrid retriever)
         self._reranker = Reranker(
             subfolder_boost_weight=1.0,
             keyword_boost_weight=1.5,
             max_per_source=3,
         )
 
-        # Answer generator (Ollama llama3.2)
+        # Answer generator (Ollama llama3.1:8b)
         self._generator = AnswerGenerator(
             model=os.getenv("OLLAMA_MODEL", "llama3.2"),
             base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
@@ -86,6 +87,7 @@ class RAGService:
         )
 
         self._collection = None
+        self._hybrid = None
 
     def _get_collection(self):
         """Get ChromaDB collection on first use."""
@@ -100,17 +102,18 @@ class RAGService:
         final_k: int = None,
     ) -> list[RankedResult]:
         """
-        Retrieve and rerank relevant chunks for a question.
+        Retrieve relevant chunks for a question using hybrid search.
+        Uses BM25 + vector search with Reciprocal Rank Fusion (RRF).
 
         Args:
             question: The user's question.
-            retrieval_k: Number of initial results from ChromaDB (over-fetch).
-                         Defaults to config RAG_RETRIEVAL_K (30).
-            final_k: Number of results after reranking.
+            retrieval_k: Number of initial results from each retriever.
+                         Defaults to config RAG_RETRIEVAL_K (50).
+            final_k: Number of results after fusion.
                      Defaults to config RAG_TOP_K (5).
 
         Returns:
-            List of RankedResult objects sorted by relevance.
+            List of RankedResult objects sorted by RRF relevance.
         """
         if retrieval_k is None:
             retrieval_k = self._config.rag.retrieval_k
@@ -119,36 +122,44 @@ class RAGService:
 
         collection = self._get_collection()
 
-        # Embed query with BGE-M3
-        query_embedding = self._embedder.embed_query(question)
+        # Initialize hybrid retriever on first use
+        if self._hybrid is None:
+            self._hybrid = HybridRetriever(collection, self._embedder)
 
-        # Retrieve from ChromaDB — explicit query_embeddings, never query_texts
-        results = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=retrieval_k,
-            include=["documents", "metadatas", "distances"],
+        # Hybrid retrieve: BM25 + vector + RRF fusion
+        hybrid_hits = self._hybrid.retrieve(
+            question=question,
+            retrieval_k=retrieval_k,
+            final_k=retrieval_k,  # Pass all to allow selection of top final_k
         )
 
-        # Convert to reranker input format
+        # Convert hybrid results to reranker input format
         hits = []
-        for i in range(len(results["ids"][0])):
+        for h in hybrid_hits:
             hits.append({
-                "chunk_id": results["ids"][0][i],
-                "document": results["documents"][0][i],
-                "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
-                "distance": results["distances"][0][i] if results["distances"] else 0.0,
+                "chunk_id": h["chunk_id"],
+                "document": h["document"],
+                "metadata": h["metadata"],
+                "distance": h.get("distance", 0.0),
             })
 
-        logger.info("Retrieved %d chunks from ChromaDB for: '%s'", len(hits), question[:60])
+        logger.info("Hybrid retrieved %d chunks for: '%s'", len(hits), question[:60])
 
-        # Rerank
-        reranked = self._reranker.rerank(
-            query=question,
-            results=hits,
-            final_top_k=final_k,
-        )
+        # With hybrid search, RRF already handles ranking
+        # Convert hits to RankedResult format (skip reranker)
+        ranked_results = []
+        for h in hits[:final_k]:
+            ranked_results.append(RankedResult(
+                chunk_id=h["chunk_id"],
+                document=h["document"],
+                metadata=h.get("metadata", {}),
+                original_distance=h.get("distance", 0.0),
+                reranked_score=h.get("rrf_score", 0.5),
+                boost_reasons=[],
+            ))
 
-        return reranked
+        logger.info("Returning top %d hybrid results (reranker bypassed)", len(ranked_results))
+        return ranked_results
 
     def ask(
         self,
@@ -162,7 +173,7 @@ class RAGService:
         Args:
             question: The user's natural-language question.
             retrieval_k: Number of initial retrieval results.
-                         Defaults to config RAG_RETRIEVAL_K (30).
+                         Defaults to config RAG_RETRIEVAL_K (50).
             final_k: Number of chunks sent to the LLM.
                      Defaults to config RAG_TOP_K (5).
 

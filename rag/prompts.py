@@ -36,7 +36,23 @@ class PromptTemplates:
         "in the order they appear in the source document.\n"
         "6. Use professional language appropriate for a workplace safety context.\n"
         "7. If multiple documents contain relevant information, synthesise them "
-        "and cite each source."
+        "and cite each source.\n"
+        "8. ALWAYS include exact numbers, measurements, quantities, and dosages "
+        "from the source documents (e.g., \"200ml\", \"15 to 20 minutes\", "
+        "\"400kg\", \"12 months\", \"10 days\"). Never paraphrase numbers.\n"
+        "9. ALWAYS include exact Australian Standard references, classification "
+        "codes, and regulatory identifiers from the source documents "
+        "(e.g., \"AS/NZS 3000\", \"Class 2\", \"Type 1\", \"Special Provision AU01\", "
+        "\"HB 326-2008\"). Never omit standard references.\n"
+        "10. ALWAYS use the exact safety terminology from the source documents "
+        "rather than paraphrasing. For example, use \"static accumulator\" not "
+        "\"static buildup\", \"target organ toxicity\" not \"organ damage\", "
+        "\"exothermic polymerization\" not \"heat reaction\".\n"
+        "11. When describing hazards, include the specific hazard classifications, "
+        "GHS categories, signal words, and precautionary statements exactly as "
+        "stated in the source MSDS/SDS documents.\n"
+        "12. When describing PPE requirements, include exact specifications "
+        "(e.g., \"P1 dust mask\", \"AS1716\", \"broad-brimmed hat\")."
     )
 
     USER_PROMPT_TEMPLATE = (
@@ -46,7 +62,9 @@ class PromptTemplates:
         "---\n\n"
         "Question: {question}\n\n"
         "Provide a detailed answer based strictly on the context documents above. "
-        "Cite the source document for each key point."
+        "Cite the source document for each key point. "
+        "Include all exact numbers, standard references, codes, and specific "
+        "technical terms from the source documents — do not paraphrase these."
     )
 
     @classmethod

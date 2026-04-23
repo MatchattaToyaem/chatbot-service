@@ -334,7 +334,7 @@ def run_eval(args):
                 category_scores[category]["hits"] += 1
 
             status = "PASS" if combined >= 0.80 else "PARTIAL" if combined >= 0.50 else "FAIL"
-            print(f"         KW={kw_score:.2f} | LLM={llm_score:.2f if llm_score >= 0 else 'N/A':>5} | "
+            print(f"         KW={kw_score:.2f} | LLM={(f'{llm_score:.2f}' if llm_score >= 0 else 'N/A'):>5} | "
                   f"Combined={combined:.2f} | {status} | {elapsed:.1f}s")
             if missed:
                 print(f"         Missed: {', '.join(missed[:3])}{'...' if len(missed) > 3 else ''}")
@@ -375,7 +375,7 @@ def run_eval(args):
             avg_combined = sum(cs["combined"])/len(cs["combined"]) if cs["combined"] else 0
             avg_llm = sum(cs["llm"])/len(cs["llm"]) if cs["llm"] else -1
             hit_rate = cs["hits"]/cs["total"]*100 if cs["total"] else 0
-            print(f"    {cat:10s}: KW={avg_kw:.3f} | LLM={avg_llm:.3f if avg_llm >= 0 else 'N/A':>5} | "
+            print(f"    {cat:10s}: KW={avg_kw:.3f} | LLM={(f'{avg_llm:.3f}' if avg_llm >= 0 else 'N/A'):>5} | "
                   f"Combined={avg_combined:.3f} | Hits={cs['hits']}/{cs['total']} ({hit_rate:.0f}%)")
 
     # Save results
