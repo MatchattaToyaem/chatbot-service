@@ -47,6 +47,8 @@ properties:
             value: "oconnors_ims_bge_m3"
           - name: HF_MODEL
             value: "meta-llama/Llama-3.2-3B-Instruct"
+          - name: HF_PROVIDER
+            value: "novita"
         volumeMounts:
           - volumeName: app-logs
             mountPath: /var/log/app
