@@ -29,12 +29,13 @@ definitions:
           - sed -i "s/PLACEHOLDER_ACR/$ACR_PASSWORD/g" grpc-server.yaml
           - sed -i "s/PLACEHOLDER_HF/$HF_TOKEN/g" grpc-server.yaml
 
+          - sed -i "s|oconnoraiplatform.azurecr.io/grpc-server:latest|oconnoraiplatform.azurecr.io/grpc-server:$BITBUCKET_COMMIT|g" grpc-server.yaml
           - |
             if az containerapp show --name grpc-server --resource-group ai-platform 2>/dev/null; then
               az containerapp update \
                 --name grpc-server \
                 --resource-group ai-platform \
-                --image oconnoraiplatform.azurecr.io/grpc-server:$BITBUCKET_COMMIT
+                --yaml grpc-server.yaml
             else
               az containerapp create \
                 --name grpc-server \
