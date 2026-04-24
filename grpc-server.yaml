@@ -33,6 +33,38 @@ properties:
             value: "50051"
           - name: HUGGING_FACE_HUB_TOKEN
             secretRef: hf-token
+          - name: LOG_FILE
+            value: "/var/log/app/chatbot-service.log"
+        volumeMounts:
+          - volumeName: app-logs
+            mountPath: /var/log/app
+
+      - name: filebeat
+        image: oconnoraiplatform.azurecr.io/filebeat:v5
+        resources:
+          cpu: 0.25
+          memory: 0.5Gi
+        env:
+          - name: ELASTICSEARCH_HOST
+            value: "http://elasticsearch.internal.proudground-90080d26.australiaeast.azurecontainerapps.io:80"
+          - name: ELASTICSEARCH_USERNAME
+            value: "elastic"
+          - name: ELASTICSEARCH_PASSWORD
+            value: "KZjpxzuWoYx41YLhggNx"
+          - name: APP_SERVICE
+            value: "chatbot-service"
+          - name: INDEX_NAME
+            value: "chatbot-service"
+          - name: FILEBEAT_TYPE
+            value: "simple"
+        volumeMounts:
+          - volumeName: app-logs
+            mountPath: /var/log/app
+
+    volumes:
+      - name: app-logs
+        storageType: EmptyDir
+
     scale:
       minReplicas: 1
       maxReplicas: 3
