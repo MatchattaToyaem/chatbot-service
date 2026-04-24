@@ -55,7 +55,7 @@ class ChromaStore:
         if self._client is not None:
             return
 
-        if self._mode == "remote":
+        if self._mode in ("remote", "http"):
             logger.info(
                 "Connecting to remote ChromaDB: %s:%d (ssl=%s)",
                 self._host, self._port, self._ssl,
