@@ -25,6 +25,8 @@ class AIServiceServicer(chatbot_service_pb2_grpc.HuggingFaceServiceServicer):
     def __init__(self):
         logger.info("Initializing RAG service...")
         self.rag = RAGService(AppConfig())
+        logger.info("Pre-warming BM25 index...")
+        self.rag.retrieve("warmup", retrieval_k=1, final_k=1)
         logger.info("RAG service initialized successfully.")
 
     def GenerateResponse(self, request, context):
