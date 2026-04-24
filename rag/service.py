@@ -81,8 +81,7 @@ class RAGService:
 
         # Answer generator (Ollama llama3.1:8b)
         self._generator = AnswerGenerator(
-            model=os.getenv("OLLAMA_MODEL", "llama3.2"),
-            base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+            model=os.getenv("HF_MODEL", "meta-llama/Llama-3.2-3B-Instruct"),
             temperature=0.1,
         )
 
@@ -234,12 +233,6 @@ class RAGService:
         except Exception as e:
             status["chromadb"] = f"error: {e}"
 
-        try:
-            if self._generator._check_ollama():
-                status["ollama"] = "ready"
-            else:
-                status["ollama"] = "not available"
-        except Exception as e:
-            status["ollama"] = f"error: {e}"
+        status["ollama"] = "n/a (using HuggingFace Inference API)"
 
         return status

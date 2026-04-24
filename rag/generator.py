@@ -1,16 +1,17 @@
 """
-Answer generator using Ollama llama3.2.
+Answer generator using HuggingFace Inference API.
 
 Takes retrieved and reranked document chunks, builds a domain-specific
-prompt, and generates a grounded answer via the local Ollama API.
+prompt, and generates a grounded answer via HuggingFace InferenceClient.
 Includes confidence scoring based on retrieval quality.
 """
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import Optional
 
-import requests
+from huggingface_hub import InferenceClient
 
 from rag.prompts import PromptTemplates
 
@@ -30,63 +31,40 @@ class GeneratedAnswer:
 
 class AnswerGenerator:
     """
-    Generates answers from retrieved IMS document chunks using Ollama.
+    Generates answers from retrieved IMS document chunks using HuggingFace Inference API.
 
     The generator:
         1. Formats chunks into a structured context with source labels.
         2. Builds a system + user prompt tuned for faithfulness.
-        3. Calls the local Ollama API to generate an answer.
+        3. Calls the HuggingFace Inference API to generate an answer.
         4. Computes a confidence score based on retrieval distances.
     """
 
     def __init__(
         self,
-        model: str = "llama3.2",
-        base_url: str = "http://localhost:11434",
+        model: str = "meta-llama/Llama-3.2-3B-Instruct",
         temperature: float = 0.1,
         max_tokens: int = 1024,
     ):
         self._model = model
-        self._base_url = base_url.rstrip("/")
         self._temperature = temperature
         self._max_tokens = max_tokens
 
-    def _check_ollama(self) -> bool:
-        """Verify Ollama is running and the model is available."""
-        try:
-            resp = requests.get(f"{self._base_url}/api/tags", timeout=5)
-            if resp.status_code == 200:
-                models = [m["name"] for m in resp.json().get("models", [])]
-                if any(self._model in m for m in models):
-                    return True
-                logger.warning(
-                    "Model '%s' not found in Ollama. Available: %s",
-                    self._model, models,
-                )
-            return False
-        except requests.ConnectionError:
-            logger.error("Cannot connect to Ollama at %s", self._base_url)
-            return False
+        token = os.getenv("HUGGING_FACE_HUB_TOKEN", "")
+        if not token:
+            raise RuntimeError("HUGGING_FACE_HUB_TOKEN environment variable is not set")
+
+        self._client = InferenceClient(model=self._model, token=token)
+        logger.info("HuggingFace InferenceClient initialized with model: %s", self._model)
 
     def _compute_confidence(self, reranked_results: list) -> float:
-        """
-        Compute a confidence score based on retrieval quality.
-
-        Factors:
-            - Average reranked score of top results (higher = more relevant)
-            - Score gap between #1 and #2 (larger gap = more confident)
-            - Number of results with boosts (domain relevance)
-        """
         if not reranked_results:
             return 0.0
 
         scores = [r.reranked_score for r in reranked_results]
         avg_score = sum(scores) / len(scores)
-
-        # Normalise to [0, 1] range — typical scores are 0.3 to 1.2
         confidence = min(1.0, max(0.0, avg_score))
 
-        # Boost confidence if top result has domain-specific boosts
         if reranked_results[0].boost_reasons:
             confidence = min(1.0, confidence + 0.05)
 
@@ -107,7 +85,6 @@ class AnswerGenerator:
         Returns:
             GeneratedAnswer with the response, sources, and confidence.
         """
-        # Prepare chunks for prompt
         chunks = []
         sources = []
         for r in reranked_results:
@@ -123,68 +100,31 @@ class AnswerGenerator:
                 "chunk_id": r.chunk_id,
             })
 
-        # Build prompt
         system_prompt, user_prompt = PromptTemplates.build_prompt(question, chunks)
-
-        # Compute confidence before generation (based on retrieval quality)
         confidence = self._compute_confidence(reranked_results)
 
-        # Check Ollama availability
-        if not self._check_ollama():
-            return GeneratedAnswer(
-                answer=(
-                    "Ollama is not available. Please ensure Ollama is running "
-                    f"with the {self._model} model loaded.\n\n"
-                    "Retrieved context is available — the retrieval pipeline "
-                    "is working, but answer generation requires a local LLM."
-                ),
-                sources=sources,
-                confidence=confidence,
-                model=self._model,
-            )
-
-        # Call Ollama API
         try:
-            resp = requests.post(
-                f"{self._base_url}/api/chat",
-                json={
-                    "model": self._model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    "stream": False,
-                    "options": {
-                        "temperature": self._temperature,
-                        "num_predict": self._max_tokens,
-                    },
-                },
-                timeout=120,
+            response = self._client.chat_completion(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                max_tokens=self._max_tokens,
+                temperature=self._temperature,
             )
-            resp.raise_for_status()
-            data = resp.json()
-
-            answer = data.get("message", {}).get("content", "No response generated.")
+            answer = response.choices[0].message.content
 
             return GeneratedAnswer(
                 answer=answer,
                 sources=sources,
                 confidence=confidence,
                 model=self._model,
-                prompt_tokens=data.get("prompt_eval_count"),
-                eval_tokens=data.get("eval_count"),
+                prompt_tokens=getattr(response.usage, "prompt_tokens", None),
+                eval_tokens=getattr(response.usage, "completion_tokens", None),
             )
 
-        except requests.Timeout:
-            logger.error("Ollama request timed out after 120s")
-            return GeneratedAnswer(
-                answer="The LLM request timed out. Try a simpler question or check Ollama status.",
-                sources=sources,
-                confidence=confidence,
-                model=self._model,
-            )
         except Exception as e:
-            logger.error("Ollama generation failed: %s", e)
+            logger.error("HuggingFace generation failed: %s", e)
             return GeneratedAnswer(
                 answer=f"Generation failed: {e}",
                 sources=sources,

@@ -1,15 +1,15 @@
 import grpc
 import logging
 import os
+import sys
 from concurrent import futures
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import chatbot_service_pb2
 import chatbot_service_pb2_grpc
-from huggingface_hub import InferenceClient
-
-HUGGINGFACEHUB_API_TOKEN = os.environ.get("HUGGING_FACE_HUB_TOKEN", "")
-if not HUGGINGFACEHUB_API_TOKEN:
-    raise RuntimeError("HUGGING_FACE_HUB_TOKEN environment variable is not set")
+from config import AppConfig
+from rag.service import RAGService
 
 log_file = os.environ.get("LOG_FILE", "/var/log/app/chatbot-service.log")
 os.makedirs(os.path.dirname(log_file), exist_ok=True)
@@ -23,24 +23,15 @@ logger = logging.getLogger(__name__)
 
 class AIServiceServicer(chatbot_service_pb2_grpc.HuggingFaceServiceServicer):
     def __init__(self):
-        logger.info("Initializing Hugging Face InferenceClient...")
-        self.client = InferenceClient(
-            model="mistralai/Mistral-7B-Instruct-v0.2",
-            provider="featherless-ai",
-            token=HUGGINGFACEHUB_API_TOKEN,
-        )
-        logger.info("Model initialized successfully.")
+        logger.info("Initializing RAG service...")
+        self.rag = RAGService(AppConfig())
+        logger.info("RAG service initialized successfully.")
 
     def GenerateResponse(self, request, context):
         logger.info(f"Received prompt: {request.prompt}")
         try:
-            response = self.client.chat_completion(
-                messages=[{"role": "user", "content": request.prompt}],
-                max_tokens=256,
-                temperature=0.7,
-            )
-            response_text = response.choices[0].message.content
-            return chatbot_service_pb2.InferenceReply(result=response_text)
+            response = self.rag.ask(question=request.prompt)
+            return chatbot_service_pb2.InferenceReply(result=response.answer)
         except Exception as e:
             logger.error(f"Error generating response: {e}")
             context.set_code(grpc.StatusCode.INTERNAL)
