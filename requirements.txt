@@ -23,6 +23,6 @@ langchain-text-splitters>=0.3.0
 python-dotenv>=1.0.0
 
 grpcio>=1.60.0
-protobuf>=4.21.0,<6.0.0
+protobuf>=6.31.1
 numpy<2.0
 rank_bm25

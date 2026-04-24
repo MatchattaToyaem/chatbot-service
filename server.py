@@ -31,7 +31,21 @@ class AIServiceServicer(chatbot_service_pb2_grpc.HuggingFaceServiceServicer):
         logger.info(f"Received prompt: {request.prompt}")
         try:
             response = self.rag.ask(question=request.prompt)
-            return chatbot_service_pb2.InferenceReply(result=response.answer)
+            sources = [
+                chatbot_service_pb2.Source(
+                    file=s.get("file", ""),
+                    subfolder=s.get("subfolder", ""),
+                    score=s.get("score", 0.0),
+                    chunk_id=s.get("chunk_id", ""),
+                )
+                for s in response.sources
+            ]
+            return chatbot_service_pb2.InferenceReply(
+                result=response.answer,
+                confidence=response.confidence,
+                sources=sources,
+                model=response.model,
+            )
         except Exception as e:
             logger.error(f"Error generating response: {e}")
             context.set_code(grpc.StatusCode.INTERNAL)

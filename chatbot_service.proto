@@ -2,17 +2,24 @@ syntax = "proto3";
 
 package chatbotservice;
 
-// Define the service and its RPC methods
 service HuggingFaceService {
   rpc GenerateResponse (PromptRequest) returns (InferenceReply) {}
 }
 
-// Define the request payload
 message PromptRequest {
   string prompt = 1;
 }
 
-// Define the response payload
+message Source {
+  string file = 1;
+  string subfolder = 2;
+  float score = 3;
+  string chunk_id = 4;
+}
+
 message InferenceReply {
   string result = 1;
+  float confidence = 2;
+  repeated Source sources = 3;
+  string model = 4;
 }
