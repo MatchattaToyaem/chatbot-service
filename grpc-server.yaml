@@ -38,11 +38,11 @@ properties:
           - name: CHROMA_MODE
             value: "http"
           - name: CHROMADB_HOST
-            value: "chroma-db-ai-platform.proudground-90080d26.australiaeast.azurecontainerapps.io"
+            value: "4.237.196.89"
           - name: CHROMADB_PORT
-            value: "443"
+            value: "8000"
           - name: CHROMADB_SSL
-            value: "true"
+            value: "false"
           - name: COLLECTION_NAME
             value: "oconnors_ims_bge_m3"
           - name: HF_MODEL
