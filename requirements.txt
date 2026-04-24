@@ -22,7 +22,7 @@ langchain-text-splitters>=0.3.0
 # Config
 python-dotenv>=1.0.0
 
-# Pinned — do not change
-protobuf==3.20.2
+grpcio>=1.60.0
+protobuf>=4.21.0,<6.0.0
 numpy<2.0
 rank_bm25
