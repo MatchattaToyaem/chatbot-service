@@ -4,7 +4,7 @@ RAG Service — the main orchestrator for the O'Connors IMS chatbot.
 Ties together:
     1. Retrieval (BGE-M3 embedding -> Hybrid BM25 + ChromaDB vector search)
     2. Ranking (Reciprocal Rank Fusion from hybrid retriever)
-    3. Generation (Ollama llama3.1:8b with domain-specific prompts)
+    3. Generation (HuggingFace Inference API — Llama-3.2-3B-Instruct)
 
 This is the single class Mat's backend calls for end-to-end Q&A.
 """
@@ -18,7 +18,7 @@ from config import AppConfig
 from ingest.embedder import Embedder
 from ingest.store import ChromaStore
 from rag.reranker import Reranker, RankedResult
-from rag.generator import AnswerGenerator, GeneratedAnswer
+from rag.generator import AnswerGenerator
 from rag.hybrid_retriever import HybridRetriever
 
 logger = logging.getLogger(__name__)
@@ -79,7 +79,7 @@ class RAGService:
             max_per_source=3,
         )
 
-        # Answer generator (Ollama llama3.1:8b)
+        # Answer generator (HuggingFace Inference API)
         self._generator = AnswerGenerator(
             model=os.getenv("HF_MODEL", "meta-llama/Llama-3.2-3B-Instruct"),
             temperature=0.1,
@@ -97,8 +97,8 @@ class RAGService:
     def retrieve(
         self,
         question: str,
-        retrieval_k: int = None,
-        final_k: int = None,
+        retrieval_k: Optional[int] = None,
+        final_k: Optional[int] = None,
     ) -> list[RankedResult]:
         """
         Retrieve relevant chunks for a question using hybrid search.
@@ -163,8 +163,8 @@ class RAGService:
     def ask(
         self,
         question: str,
-        retrieval_k: int = None,
-        final_k: int = None,
+        retrieval_k: Optional[int] = None,
+        final_k: Optional[int] = None,
     ) -> RAGResponse:
         """
         Full RAG pipeline: retrieve -> rerank -> generate answer.

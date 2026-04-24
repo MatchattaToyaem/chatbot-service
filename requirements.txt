@@ -10,7 +10,10 @@ sentence-transformers>=2.5.1
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
 
-# Ollama API calls
+# HuggingFace Inference API
+huggingface_hub>=0.23.0
+
+# HTTP client (used by chromadb)
 requests>=2.28.0
 
 # Text splitting (for ingest)
