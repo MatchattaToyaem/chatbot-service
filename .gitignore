@@ -1,2 +1,12 @@
 __pycache__
 .venv
+.env 
+.venv/ 
+__pycache__/ 
+*.pyc 
+chromadb_data*/ 
+chromadb_local/ 
+chromadb_local.zip 
+Colab_eval_files.zip 
+COLAB_EVAL_NOTEBOOK.py 
+*.zip 
