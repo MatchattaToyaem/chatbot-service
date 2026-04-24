@@ -26,8 +26,8 @@ properties:
       - name: grpc-server
         image: oconnoraiplatform.azurecr.io/grpc-server:latest
         resources:
-          cpu: 0.5
-          memory: 1Gi
+          cpu: 1.0
+          memory: 2Gi
         env:
           - name: PORT
             value: "50051"
@@ -50,6 +50,23 @@ properties:
         volumeMounts:
           - volumeName: app-logs
             mountPath: /var/log/app
+        probes:
+          - type: startup
+            tcpSocket:
+              port: 50051
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 30
+          - type: readiness
+            tcpSocket:
+              port: 50051
+            periodSeconds: 10
+            failureThreshold: 3
+          - type: liveness
+            tcpSocket:
+              port: 50051
+            periodSeconds: 30
+            failureThreshold: 3
 
       - name: filebeat
         image: oconnoraiplatform.azurecr.io/filebeat:v5
