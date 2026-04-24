@@ -17,10 +17,10 @@ properties:
       - name: hf-token
         value: PLACEHOLDER_HF
     ingress:
-      external: "true"
+      external: true
       targetPort: 50051
       transport: http2
-      allowInsecure: "false"
+      allowInsecure: false
   template:
     containers:
       - name: grpc-server
