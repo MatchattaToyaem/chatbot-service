@@ -10,7 +10,7 @@ definitions:
           - echo $ACR_PASSWORD | docker login oconnoraiplatform.azurecr.io
               --username $ACR_USERNAME
               --password-stdin
-          - docker build --build-arg HUGGING_FACE_HUB_TOKEN=$HF_TOKEN -t oconnoraiplatform.azurecr.io/grpc-server:$BITBUCKET_COMMIT .
+          - docker build -t oconnoraiplatform.azurecr.io/grpc-server:$BITBUCKET_COMMIT .
           - docker tag oconnoraiplatform.azurecr.io/grpc-server:$BITBUCKET_COMMIT
               oconnoraiplatform.azurecr.io/grpc-server:latest
           - docker push oconnoraiplatform.azurecr.io/grpc-server:$BITBUCKET_COMMIT

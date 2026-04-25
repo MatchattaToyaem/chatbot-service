@@ -58,7 +58,7 @@ properties:
               port: 50051
             initialDelaySeconds: 30
             periodSeconds: 10
-            failureThreshold: 30
+            failureThreshold: 120
           - type: readiness
             tcpSocket:
               port: 50051
