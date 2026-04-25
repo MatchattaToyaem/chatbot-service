@@ -1,8 +1,8 @@
 """
-Answer generator using HuggingFace Inference API.
+Answer generator using Ollama (OpenAI-compatible API).
 
 Takes retrieved and reranked document chunks, builds a domain-specific
-prompt, and generates a grounded answer via HuggingFace InferenceClient.
+prompt, and generates a grounded answer via a local Ollama instance.
 Includes confidence scoring based on retrieval quality.
 """
 
@@ -11,7 +11,7 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
-from huggingface_hub import InferenceClient
+from openai import OpenAI
 
 from rag.prompts import PromptTemplates
 
@@ -31,18 +31,18 @@ class GeneratedAnswer:
 
 class AnswerGenerator:
     """
-    Generates answers from retrieved IMS document chunks using HuggingFace Inference API.
+    Generates answers from retrieved IMS document chunks using Ollama.
 
     The generator:
         1. Formats chunks into a structured context with source labels.
         2. Builds a system + user prompt tuned for faithfulness.
-        3. Calls the HuggingFace Inference API to generate an answer.
+        3. Calls the Ollama API to generate an answer.
         4. Computes a confidence score based on retrieval distances.
     """
 
     def __init__(
         self,
-        model: str = "meta-llama/Llama-3.2-3B-Instruct",
+        model: str = "llama3.2:3b",
         temperature: float = 0.1,
         max_tokens: int = 1024,
     ):
@@ -50,13 +50,9 @@ class AnswerGenerator:
         self._temperature = temperature
         self._max_tokens = max_tokens
 
-        token = os.getenv("HUGGING_FACE_HUB_TOKEN", "")
-        if not token:
-            raise RuntimeError("HUGGING_FACE_HUB_TOKEN environment variable is not set")
-
-        provider = os.getenv("HF_PROVIDER") or None
-        self._client = InferenceClient(model=self._model, token=token, provider=provider)
-        logger.info("HuggingFace InferenceClient initialized with model: %s, provider: %s", self._model, provider)
+        endpoint = os.getenv("OLLAMA_ENDPOINT", "http://ollama-service:11434")
+        self._client = OpenAI(base_url=f"{endpoint}/v1", api_key="ollama")
+        logger.info("Ollama client initialized: endpoint=%s model=%s", endpoint, self._model)
 
     def _compute_confidence(self, reranked_results: list) -> float:
         if not reranked_results:
@@ -105,7 +101,8 @@ class AnswerGenerator:
         confidence = self._compute_confidence(reranked_results)
 
         try:
-            response = self._client.chat_completion(
+            response = self._client.chat.completions.create(
+                model=self._model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
@@ -125,7 +122,7 @@ class AnswerGenerator:
             )
 
         except Exception as e:
-            logger.error("HuggingFace generation failed: %s", e)
+            logger.error("Ollama generation failed: %s", e)
             return GeneratedAnswer(
                 answer=f"Generation failed: {e}",
                 sources=sources,

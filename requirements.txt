@@ -10,8 +10,11 @@ sentence-transformers>=2.5.1
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
 
-# HuggingFace Inference API
+# HuggingFace (used by sentence-transformers for bge-m3)
 huggingface_hub>=0.23.0
+
+# Ollama / OpenAI-compatible LLM client
+openai>=1.0.0
 
 # HTTP client (used by chromadb)
 requests>=2.28.0

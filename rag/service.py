@@ -81,7 +81,7 @@ class RAGService:
 
         # Answer generator (HuggingFace Inference API)
         self._generator = AnswerGenerator(
-            model=os.getenv("HF_MODEL", "meta-llama/Llama-3.2-3B-Instruct"),
+            model=os.getenv("LLM_MODEL", "llama3.2:3b"),
             temperature=0.1,
         )
 
