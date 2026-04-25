@@ -55,7 +55,7 @@ class AnswerGenerator:
             raise RuntimeError("HUGGING_FACE_HUB_TOKEN environment variable is not set")
 
         provider = os.getenv("HF_PROVIDER") or None
-        self._client = InferenceClient(model=self._model, token=token)
+        self._client = InferenceClient(model=self._model, token=token, provider=provider)
         logger.info("HuggingFace InferenceClient initialized with model: %s, provider: %s", self._model, provider)
 
     def _compute_confidence(self, reranked_results: list) -> float:
