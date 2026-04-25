@@ -4,6 +4,8 @@ import os
 import sys
 from concurrent import futures
 
+import requests
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import chatbot_service_pb2
@@ -21,8 +23,28 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def sanity_check():
+    endpoint = os.getenv("OLLAMA_ENDPOINT", "http://ollama-service:11434")
+    model = os.getenv("LLM_MODEL", "llama3.2:3b")
+
+    logger.info("Sanity check: Ollama endpoint=%s model=%s", endpoint, model)
+
+    try:
+        r = requests.get(f"{endpoint}/v1/models", timeout=10)
+        r.raise_for_status()
+        available = [m["id"] for m in r.json().get("data", [])]
+        if model not in available:
+            raise RuntimeError(f"Model '{model}' not found in Ollama. Available: {available}")
+        logger.info("Sanity check passed: Ollama reachable, model '%s' is loaded.", model)
+    except requests.exceptions.ConnectionError:
+        raise RuntimeError(f"Sanity check failed: cannot reach Ollama at {endpoint}")
+    except requests.exceptions.Timeout:
+        raise RuntimeError(f"Sanity check failed: Ollama at {endpoint} timed out")
+
+
 class AIServiceServicer(chatbot_service_pb2_grpc.HuggingFaceServiceServicer):
     def __init__(self):
+        sanity_check()
         logger.info("Initializing RAG service...")
         self.rag = RAGService(AppConfig())
         logger.info("Pre-warming BM25 index...")
