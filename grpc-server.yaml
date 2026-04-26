@@ -45,10 +45,12 @@ properties:
             value: "false"
           - name: COLLECTION_NAME
             value: "oconnors_ims_bge_m3"
+          - name: LLM_PROVIDER
+            value: "huggingface"
           - name: OLLAMA_ENDPOINT
             value: "http://ollama-service.internal.proudground-90080d26.australiaeast.azurecontainerapps.io"
           - name: LLM_MODEL
-            value: "llama3.2:3b"
+            value: "meta-llama/Llama-3.1-8B"
         volumeMounts:
           - volumeName: app-logs
             mountPath: /var/log/app

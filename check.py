@@ -1,7 +1,7 @@
 import requests
 
 resp = requests.get(
-    "https://huggingface.co/api/models/meta-llama/Llama-3.2-3B-Instruct",
+    "https://huggingface.co/api/models/meta-llama/Llama-3.1-8B",
     params={"expand": "inferenceProviderMapping"}
 )
 mapping = resp.json().get("inferenceProviderMapping", {})

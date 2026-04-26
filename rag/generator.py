@@ -1,17 +1,15 @@
 """
-Answer generator using Ollama (OpenAI-compatible API).
+Answer generator supporting two provider modes:
+  - "ollama"      : self-hosted Ollama via OpenAI-compatible API (default)
+  - "huggingface" : HuggingFace Inference API
 
-Takes retrieved and reranked document chunks, builds a domain-specific
-prompt, and generates a grounded answer via a local Ollama instance.
-Includes confidence scoring based on retrieval quality.
+Controlled by the LLM_PROVIDER environment variable.
 """
 
 import logging
 import os
 from dataclasses import dataclass
 from typing import Optional
-
-from openai import OpenAI
 
 from rag.prompts import PromptTemplates
 
@@ -31,13 +29,11 @@ class GeneratedAnswer:
 
 class AnswerGenerator:
     """
-    Generates answers from retrieved IMS document chunks using Ollama.
+    Generates answers from retrieved IMS document chunks.
 
-    The generator:
-        1. Formats chunks into a structured context with source labels.
-        2. Builds a system + user prompt tuned for faithfulness.
-        3. Calls the Ollama API to generate an answer.
-        4. Computes a confidence score based on retrieval distances.
+    Provider is selected via LLM_PROVIDER env var:
+        LLM_PROVIDER=ollama       → self-hosted Ollama (OpenAI-compatible)
+        LLM_PROVIDER=huggingface  → HuggingFace Inference API
     """
 
     def __init__(
@@ -49,39 +45,40 @@ class AnswerGenerator:
         self._model = model
         self._temperature = temperature
         self._max_tokens = max_tokens
+        self._provider = os.getenv("LLM_PROVIDER", "ollama").lower()
 
+        if self._provider == "huggingface":
+            self._init_huggingface()
+        else:
+            self._init_ollama()
+
+    def _init_ollama(self):
+        from openai import OpenAI
         endpoint = os.getenv("OLLAMA_ENDPOINT", "http://ollama-service:11434")
         self._client = OpenAI(base_url=f"{endpoint}/v1", api_key="ollama")
-        logger.info("Ollama client initialized: endpoint=%s model=%s", endpoint, self._model)
+        logger.info("LLM provider: Ollama | endpoint=%s | model=%s", endpoint, self._model)
+
+    def _init_huggingface(self):
+        from huggingface_hub import InferenceClient
+        token = os.getenv("HUGGING_FACE_HUB_TOKEN", "")
+        if not token:
+            raise RuntimeError("HUGGING_FACE_HUB_TOKEN is required for LLM_PROVIDER=huggingface")
+        hf_model = os.getenv("HF_MODEL", "meta-llama/Llama-3.2-3B-Instruct")
+        self._model = hf_model
+        self._client = InferenceClient(model=hf_model, token=token)
+        logger.info("LLM provider: HuggingFace | model=%s", hf_model)
 
     def _compute_confidence(self, reranked_results: list) -> float:
         if not reranked_results:
             return 0.0
-
         scores = [r.reranked_score for r in reranked_results]
         avg_score = sum(scores) / len(scores)
         confidence = min(1.0, max(0.0, avg_score))
-
         if reranked_results[0].boost_reasons:
             confidence = min(1.0, confidence + 0.05)
-
         return round(confidence, 3)
 
-    def generate(
-        self,
-        question: str,
-        reranked_results: list,
-    ) -> GeneratedAnswer:
-        """
-        Generate an answer from reranked retrieval results.
-
-        Args:
-            question: The user's question.
-            reranked_results: List of RankedResult objects from the reranker.
-
-        Returns:
-            GeneratedAnswer with the response, sources, and confidence.
-        """
+    def generate(self, question: str, reranked_results: list) -> GeneratedAnswer:
         chunks = []
         sources = []
         for r in reranked_results:
@@ -99,30 +96,43 @@ class AnswerGenerator:
 
         system_prompt, user_prompt = PromptTemplates.build_prompt(question, chunks)
         confidence = self._compute_confidence(reranked_results)
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
 
         try:
-            response = self._client.chat.completions.create(
-                model=self._model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                max_tokens=self._max_tokens,
-                temperature=self._temperature,
-            )
-            answer = response.choices[0].message.content
+            if self._provider == "huggingface":
+                response = self._client.chat_completion(
+                    messages=messages,
+                    max_tokens=self._max_tokens,
+                    temperature=self._temperature,
+                )
+                answer = response.choices[0].message.content
+                prompt_tokens = getattr(response.usage, "prompt_tokens", None)
+                eval_tokens = getattr(response.usage, "completion_tokens", None)
+            else:
+                response = self._client.chat.completions.create(
+                    model=self._model,
+                    messages=messages,
+                    max_tokens=self._max_tokens,
+                    temperature=self._temperature,
+                )
+                answer = response.choices[0].message.content
+                prompt_tokens = getattr(response.usage, "prompt_tokens", None)
+                eval_tokens = getattr(response.usage, "completion_tokens", None)
 
             return GeneratedAnswer(
                 answer=answer,
                 sources=sources,
                 confidence=confidence,
                 model=self._model,
-                prompt_tokens=getattr(response.usage, "prompt_tokens", None),
-                eval_tokens=getattr(response.usage, "completion_tokens", None),
+                prompt_tokens=prompt_tokens,
+                eval_tokens=eval_tokens,
             )
 
         except Exception as e:
-            logger.error("Ollama generation failed: %s", e)
+            logger.error("Generation failed (%s): %s", self._provider, e)
             return GeneratedAnswer(
                 answer=f"Generation failed: {e}",
                 sources=sources,
