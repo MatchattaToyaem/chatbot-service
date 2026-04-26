@@ -63,10 +63,11 @@ class AnswerGenerator:
         token = os.getenv("HUGGING_FACE_HUB_TOKEN", "")
         if not token:
             raise RuntimeError("HUGGING_FACE_HUB_TOKEN is required for LLM_PROVIDER=huggingface")
-        hf_model = os.getenv("HF_MODEL", "meta-llama/Llama-3.1-8B")
+        hf_model = os.getenv("HF_MODEL", "meta-llama/Llama-3.1-8B-Instruct")
+        hf_provider = os.getenv("HF_PROVIDER", "featherless-ai")
         self._model = hf_model
-        self._client = InferenceClient(model=hf_model, token=token)
-        logger.info("LLM provider: HuggingFace | model=%s", hf_model)
+        self._client = InferenceClient(token=token, provider=hf_provider)
+        logger.info("LLM provider: HuggingFace | model=%s | provider=%s", hf_model, hf_provider)
 
     def _compute_confidence(self, reranked_results: list) -> float:
         if not reranked_results:
@@ -104,6 +105,7 @@ class AnswerGenerator:
         try:
             if self._provider == "huggingface":
                 response = self._client.chat_completion(
+                    model=self._model,
                     messages=messages,
                     max_tokens=self._max_tokens,
                     temperature=self._temperature,
