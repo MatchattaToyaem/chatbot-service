@@ -24,22 +24,29 @@ logger = logging.getLogger(__name__)
 
 
 def sanity_check():
-    endpoint = os.getenv("OLLAMA_ENDPOINT", "http://ollama-service:11434")
-    model = os.getenv("LLM_MODEL", "llama3.2:3b")
+    provider = os.getenv("LLM_PROVIDER", "ollama").lower()
 
-    logger.info("Sanity check: Ollama endpoint=%s model=%s", endpoint, model)
+    if provider == "huggingface":
+        token = os.getenv("HUGGING_FACE_HUB_TOKEN", "")
+        if not token:
+            raise RuntimeError("Sanity check failed: HUGGING_FACE_HUB_TOKEN is not set")
+        logger.info("Sanity check passed: LLM_PROVIDER=huggingface, token present.")
 
-    try:
-        r = requests.get(f"{endpoint}/v1/models", timeout=10)
-        r.raise_for_status()
-        available = [m["id"] for m in r.json().get("data", [])]
-        if model not in available:
-            raise RuntimeError(f"Model '{model}' not found in Ollama. Available: {available}")
-        logger.info("Sanity check passed: Ollama reachable, model '%s' is loaded.", model)
-    except requests.exceptions.ConnectionError:
-        raise RuntimeError(f"Sanity check failed: cannot reach Ollama at {endpoint}")
-    except requests.exceptions.Timeout:
-        raise RuntimeError(f"Sanity check failed: Ollama at {endpoint} timed out")
+    else:
+        endpoint = os.getenv("OLLAMA_ENDPOINT", "http://ollama-service:11434")
+        model = os.getenv("LLM_MODEL", "llama3.2:3b")
+        logger.info("Sanity check: Ollama endpoint=%s model=%s", endpoint, model)
+        try:
+            r = requests.get(f"{endpoint}/v1/models", timeout=10)
+            r.raise_for_status()
+            available = [m["id"] for m in r.json().get("data", [])]
+            if model not in available:
+                raise RuntimeError(f"Model '{model}' not found in Ollama. Available: {available}")
+            logger.info("Sanity check passed: Ollama reachable, model '%s' is loaded.", model)
+        except requests.exceptions.ConnectionError:
+            raise RuntimeError(f"Sanity check failed: cannot reach Ollama at {endpoint}")
+        except requests.exceptions.Timeout:
+            raise RuntimeError(f"Sanity check failed: Ollama at {endpoint} timed out")
 
 
 class AIServiceServicer(chatbot_service_pb2_grpc.HuggingFaceServiceServicer):
