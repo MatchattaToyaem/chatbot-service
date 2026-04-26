@@ -63,7 +63,7 @@ class AnswerGenerator:
         token = os.getenv("HUGGING_FACE_HUB_TOKEN", "")
         if not token:
             raise RuntimeError("HUGGING_FACE_HUB_TOKEN is required for LLM_PROVIDER=huggingface")
-        hf_model = os.getenv("HF_MODEL", "meta-llama/Llama-3.2-3B-Instruct")
+        hf_model = os.getenv("HF_MODEL", "meta-llama/Llama-3.1-8B")
         self._model = hf_model
         self._client = InferenceClient(model=hf_model, token=token)
         logger.info("LLM provider: HuggingFace | model=%s", hf_model)
