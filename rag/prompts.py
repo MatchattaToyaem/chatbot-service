@@ -9,6 +9,10 @@ The system prompt establishes O'Connors' domain (HVAC, mechanical
 engineering, Australian workplace safety) and instructs the model
 to behave as a knowledgeable IMS assistant.
 
+CHANGES (v2.2 — 29 Apr 2026):
+  - Removed "Source:" line from answer body (sources shown in UI sidebar)
+  - Added formatting rules: bullet points, headers, structured layout
+  - Prompt now instructs LLM to keep answers scannable for field technicians
 CHANGES (v2.1 — 24 Apr 2026):
   - Prompt now instructs LLM to cite sources naturally (not "Document 1:")
   - format_context uses clean document names (not raw file paths)
@@ -58,8 +62,19 @@ class PromptTemplates:
         "title (e.g., Section 7: Handling and Storage).\n"
         "11. For PPE requirements, list each item specifically (e.g., "
         "\"chemical-resistant gloves, safety goggles, P2 respirator\").\n"
-        "12. At the end of your answer, add a brief source line starting with "
-        "\"Source:\" listing the document names used, separated by commas."
+        "12. Do NOT include any \"Source:\", \"References:\", or \"Referred Docs:\" "
+        "section at the end of your answer. Source attribution is handled "
+        "separately by the system.\n\n"
+        "FORMATTING RULES:\n"
+        "- Structure your answer for easy scanning by field technicians.\n"
+        "- Use **bold headings** to separate major sections of the answer.\n"
+        "- Use bullet points for lists of items, steps, PPE, hazards, or "
+        "requirements.\n"
+        "- Use numbered lists when the order matters (e.g., procedure steps).\n"
+        "- Keep each bullet point concise — one idea per line.\n"
+        "- For short factual answers (one or two sentences), plain text is fine "
+        "— do not force bullet points on simple answers.\n"
+        "- Use line breaks between sections to improve readability."
     )
 
     USER_PROMPT_TEMPLATE = (
@@ -68,9 +83,10 @@ class PromptTemplates:
         "{context}\n"
         "---\n\n"
         "Question: {question}\n\n"
-        "Provide a clear, professional answer based strictly on the context "
-        "documents above. Cite sources naturally within the answer. End with "
-        "a brief \"Source:\" line listing the documents referenced."
+        "Provide a clear, well-structured answer based strictly on the context "
+        "documents above. Use headings and bullet points where appropriate. "
+        "Cite sources naturally within the answer. Do not add a source list "
+        "at the end."
     )
 
     @staticmethod
