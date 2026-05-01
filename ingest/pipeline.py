@@ -6,6 +6,10 @@ extracts text, chunks it, embeds with BGE-M3, and stores in ChromaDB.
 
 Supports folder filtering (Priority 1 = Procedures/SOPs/Policies)
 and skip-ocr mode for fast dry runs.
+
+SCRUM-37: Integrated dead-letter queue (DLQ) routes all failed
+extractions to dead_letter/ with structured error records and
+generates an alert report at the end of each run.
 """
 
 import json
@@ -20,6 +24,7 @@ from ingest.extractor import TextExtractor
 from ingest.chunker import DocumentChunker
 from ingest.embedder import Embedder
 from ingest.store import ChromaStore
+from dead_letter_queue import DeadLetterQueue
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +42,7 @@ class IngestStats:
     elapsed_seconds: float = 0.0
     skipped_files: list = field(default_factory=list)
     errors: list = field(default_factory=list)
+    dlq_report_path: str = ""  # SCRUM-37: path to DLQ alert report
 
     def summary(self) -> dict:
         return {
@@ -50,6 +56,7 @@ class IngestStats:
             "elapsed_seconds": round(self.elapsed_seconds, 1),
             "skipped_files": self.skipped_files[:50],
             "errors": self.errors[:50],
+            "dlq_report_path": self.dlq_report_path,
         }
 
 
@@ -74,6 +81,9 @@ class IngestPipeline:
         5. If no text extracted, create a fallback chunk with filename metadata.
         6. Embed all chunks with BGE-M3 (batched, GPU-accelerated on Colab).
         7. Store chunks + embeddings in ChromaDB (explicit embeddings=).
+
+    SCRUM-37: Failed documents are routed to a dead-letter queue (DLQ)
+    at dead_letter/. An alert report is generated after each run.
     """
 
     PRIORITY_1 = ["Procedures", "SOP's", "Policies"]
@@ -99,6 +109,7 @@ class IngestPipeline:
         enable_ocr: bool = True,
         ocr_timeout: int = 10,
         folders: Optional[list[str]] = None,
+        dead_letter_dir: str = "./dead_letter",
     ):
         self._ims_root = ims_root
         self._folders = folders or self.PRIORITY_1
@@ -121,6 +132,9 @@ class IngestPipeline:
             ssl=chroma_ssl,
             local_path=local_chroma_path,
         )
+
+        # SCRUM-37: Dead-letter queue for failed extractions
+        self._dlq = DeadLetterQueue(base_dir=dead_letter_dir)
 
     def _discover_files(self) -> list[str]:
         """
@@ -170,13 +184,14 @@ class IngestPipeline:
         start_time = time.time()
 
         logger.info("=" * 70)
-        logger.info("O'Connors IMS — BGE-M3 Ingestion Pipeline")
+        logger.info("O'Connors IMS -- BGE-M3 Ingestion Pipeline")
         logger.info("=" * 70)
         logger.info("  IMS Root:     %s", self._ims_root)
         logger.info("  Folders:      %s", ", ".join(self._folders))
         logger.info("  Embedding:    %s", self._embedder.model_name)
         logger.info("  OCR:          %s", "ENABLED" if self._enable_ocr else "DISABLED")
         logger.info("  Store mode:   %s", self._store._mode)
+        logger.info("  Dead letter:  %s", self._dlq.base_dir)
         logger.info("=" * 70)
 
         logger.info("Discovering files...")
@@ -196,69 +211,115 @@ class IngestPipeline:
             filename = Path(file_path).name
             logger.info("[%d/%d] %s", file_idx + 1, stats.files_found, filename)
 
-            result = self._extractor.extract(file_path)
+            try:
+                result = self._extractor.extract(file_path)
 
-            if result.error:
+                if result.error:
+                    stats.files_failed += 1
+                    stats.errors.append(f"{filename}: {result.error}")
+                    logger.warning("  FAILED: %s", result.error)
+
+                    # SCRUM-37: Route to dead-letter queue
+                    self._dlq.enqueue(
+                        file_path=file_path,
+                        stage="extraction",
+                        error=result.error,
+                        metadata={"extraction_method": result.method},
+                    )
+
+                    fallback = self._chunker.make_fallback_chunk(
+                        file_path=file_path,
+                        ims_root=self._ims_root,
+                        reason=result.error,
+                    )
+                    all_chunks.append(fallback)
+                    stats.files_fallback += 1
+                    logger.info("  FALLBACK: stored filename chunk for discoverability")
+                    continue
+
+                if not result.text.strip():
+                    stats.files_skipped += 1
+                    stats.skipped_files.append(filename)
+                    logger.info("  SKIPPED: no text extracted")
+
+                    # SCRUM-37: Route to dead-letter queue
+                    self._dlq.enqueue(
+                        file_path=file_path,
+                        stage="extraction",
+                        error="No text extracted from document",
+                        metadata={"extraction_method": result.method},
+                    )
+
+                    fallback = self._chunker.make_fallback_chunk(
+                        file_path=file_path,
+                        ims_root=self._ims_root,
+                        reason="no_text_extracted",
+                    )
+                    all_chunks.append(fallback)
+                    stats.files_fallback += 1
+                    logger.info("  FALLBACK: stored filename chunk for discoverability")
+                    continue
+
+                stats.total_ocr_pages += result.ocr_pages
+
+                chunks = self._chunker.chunk_document(
+                    text=result.text,
+                    file_path=file_path,
+                    ims_root=self._ims_root,
+                    page_count=result.page_count,
+                    extraction_method=result.method,
+                )
+
+                if not chunks:
+                    stats.files_skipped += 1
+                    stats.skipped_files.append(filename)
+                    logger.info("  SKIPPED: no chunks produced")
+
+                    # SCRUM-37: Route to dead-letter queue
+                    self._dlq.enqueue(
+                        file_path=file_path,
+                        stage="chunking",
+                        error="Chunker produced zero chunks despite extracted text",
+                        metadata={
+                            "text_length": len(result.text),
+                            "extraction_method": result.method,
+                        },
+                    )
+
+                    fallback = self._chunker.make_fallback_chunk(
+                        file_path=file_path,
+                        ims_root=self._ims_root,
+                        reason="chunker_produced_zero",
+                    )
+                    all_chunks.append(fallback)
+                    stats.files_fallback += 1
+                    continue
+
+                all_chunks.extend(chunks)
+                stats.files_processed += 1
+                logger.info(
+                    "  OK: %d chunks (%s, %d pages%s)",
+                    len(chunks), result.method, result.page_count,
+                    f", {result.ocr_pages} OCR" if result.ocr_pages else "",
+                )
+
+            except Exception as e:
+                # SCRUM-37: Catch any unexpected crash (OOM, segfault, etc.)
                 stats.files_failed += 1
-                stats.errors.append(f"{filename}: {result.error}")
-                logger.warning("  FAILED: %s", result.error)
+                error_msg = f"Unexpected error: {type(e).__name__}: {e}"
+                stats.errors.append(f"{filename}: {error_msg}")
+                logger.error("  CRASH: %s", error_msg)
 
-                fallback = self._chunker.make_fallback_chunk(
+                self._dlq.enqueue(
                     file_path=file_path,
-                    ims_root=self._ims_root,
-                    reason=result.error,
+                    stage="unknown",
+                    error=error_msg,
                 )
-                all_chunks.append(fallback)
-                stats.files_fallback += 1
-                logger.info("  FALLBACK: stored filename chunk for discoverability")
                 continue
 
-            if not result.text.strip():
-                stats.files_skipped += 1
-                stats.skipped_files.append(filename)
-                logger.info("  SKIPPED: no text extracted")
-
-                fallback = self._chunker.make_fallback_chunk(
-                    file_path=file_path,
-                    ims_root=self._ims_root,
-                    reason="no_text_extracted",
-                )
-                all_chunks.append(fallback)
-                stats.files_fallback += 1
-                logger.info("  FALLBACK: stored filename chunk for discoverability")
-                continue
-
-            stats.total_ocr_pages += result.ocr_pages
-
-            chunks = self._chunker.chunk_document(
-                text=result.text,
-                file_path=file_path,
-                ims_root=self._ims_root,
-                page_count=result.page_count,
-                extraction_method=result.method,
-            )
-
-            if not chunks:
-                stats.files_skipped += 1
-                stats.skipped_files.append(filename)
-                logger.info("  SKIPPED: no chunks produced")
-
-                fallback = self._chunker.make_fallback_chunk(
-                    file_path=file_path,
-                    ims_root=self._ims_root,
-                    reason="chunker_produced_zero",
-                )
-                all_chunks.append(fallback)
-                stats.files_fallback += 1
-                continue
-
-            all_chunks.extend(chunks)
-            stats.files_processed += 1
-            logger.info(
-                "  OK: %d chunks (%s, %d pages%s)",
-                len(chunks), result.method, result.page_count,
-                f", {result.ocr_pages} OCR" if result.ocr_pages else "",
-            )
+        # ── SCRUM-37: Generate DLQ alert report ──────────────────────────
+        dlq_report = self._dlq.generate_alert_report()
+        stats.dlq_report_path = dlq_report
 
         logger.info("-" * 70)
         logger.info(
@@ -300,6 +361,7 @@ class IngestPipeline:
         logger.info("  OCR pages:       %d", stats.total_ocr_pages)
         logger.info("  Time:            %.1f seconds", stats.elapsed_seconds)
         logger.info("  Collection size: %d", self._store.count())
+        logger.info("  DLQ report:      %s", stats.dlq_report_path)
         logger.info("=" * 70)
 
         return stats

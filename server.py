@@ -32,6 +32,15 @@ def sanity_check():
             raise RuntimeError("Sanity check failed: HUGGING_FACE_HUB_TOKEN is not set")
         logger.info("Sanity check passed: LLM_PROVIDER=huggingface, token present.")
 
+    elif provider == "azure-foundry":
+        key = os.getenv("AZURE_FOUNDRY_KEY", "")
+        endpoint = os.getenv("AZURE_FOUNDRY_ENDPOINT", "")
+        if not key:
+            raise RuntimeError("Sanity check failed: AZURE_FOUNDRY_KEY is not set")
+        if not endpoint:
+            raise RuntimeError("Sanity check failed: AZURE_FOUNDRY_ENDPOINT is not set")
+        logger.info("Sanity check passed: LLM_PROVIDER=azure-foundry, key and endpoint present.")
+
     else:
         endpoint = os.getenv("OLLAMA_ENDPOINT", "http://ollama-service:11434")
         model = os.getenv("LLM_MODEL", "llama3.2:3b")

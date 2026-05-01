@@ -11,6 +11,15 @@ Extraction strategy (tiered):
 
 PaddleOCR API: 2.9.1 uses ocr.ocr() with list-based output.
 PaddlePaddle: 2.6.2 (GPU on Colab, CPU on Windows).
+
+CHANGES (v2.2 — 30 Apr 2026):
+  - PDF: Always extract tables (not just when text < threshold). Tables
+    are appended as markdown after the page text so both are captured.
+  - DOCX: Tables now formatted as markdown with header row + separator.
+    Table position preserved relative to paragraphs (interleaved).
+  - XLSX: First row treated as headers, remaining rows formatted as
+    markdown table. Much better structure for LLM comprehension.
+  - All table formatting uses _format_table_as_markdown() helper.
 """
 
 import logging
@@ -92,6 +101,60 @@ class TextExtractor:
         return self._ocr_engine
 
     # ------------------------------------------------------------------
+    # Table formatting helper
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _format_table_as_markdown(rows: list[list]) -> str:
+        """
+        Convert a list of rows (each row = list of cell strings) into
+        a markdown table with header row and separator.
+
+        If the table has fewer than 2 rows, falls back to pipe-separated.
+
+        Example output:
+            | Header 1 | Header 2 | Header 3 |
+            |----------|----------|----------|
+            | Cell A   | Cell B   | Cell C   |
+            | Cell D   | Cell E   | Cell F   |
+        """
+        if not rows:
+            return ""
+
+        # Clean cells: convert None to empty string, strip whitespace
+        cleaned = []
+        for row in rows:
+            cleaned_row = [str(c).strip() if c is not None else "" for c in row]
+            # Skip completely empty rows
+            if any(cell for cell in cleaned_row):
+                cleaned.append(cleaned_row)
+
+        if not cleaned:
+            return ""
+
+        # Normalise column count (pad short rows)
+        max_cols = max(len(r) for r in cleaned)
+        for row in cleaned:
+            while len(row) < max_cols:
+                row.append("")
+
+        # Build markdown table
+        lines = []
+
+        # Header row (first row)
+        header = cleaned[0]
+        lines.append("| " + " | ".join(header) + " |")
+
+        # Separator row
+        lines.append("| " + " | ".join("---" for _ in header) + " |")
+
+        # Data rows
+        for row in cleaned[1:]:
+            lines.append("| " + " | ".join(row) + " |")
+
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------
     # DRM detection
     # ------------------------------------------------------------------
 
@@ -121,7 +184,13 @@ class TextExtractor:
     # ------------------------------------------------------------------
 
     def _extract_pdf(self, file_path: str) -> ExtractionResult:
-        """Extract text from PDF using pdfplumber, with OCR fallback."""
+        """
+        Extract text from PDF using pdfplumber, with OCR fallback.
+
+        CHANGED (v2.2): Tables are now ALWAYS extracted from every page,
+        not just when extract_text() returns insufficient text. Both
+        regular text and table text are combined per page.
+        """
         import pdfplumber
 
         if self._check_drm(file_path):
@@ -137,38 +206,41 @@ class TextExtractor:
                 total_pages = len(pdf.pages)
 
                 for page_num, page in enumerate(pdf.pages):
+                    page_parts = []
+
+                    # --- 1. Extract regular text ---
                     text = ""
                     try:
                         text = (page.extract_text() or "").strip()
                     except Exception as e:
                         logger.debug("pdfplumber failed on page %d: %s", page_num, e)
 
-                    # Also try extracting tables as text
-                    if len(text) < self._min_text_threshold:
-                        try:
-                            tables = page.extract_tables()
-                            if tables:
-                                table_text = []
-                                for table in tables:
-                                    for row in table:
-                                        cells = [str(c).strip() for c in row if c]
-                                        if cells:
-                                            table_text.append(" | ".join(cells))
-                                table_str = "\n".join(table_text).strip()
-                                if len(table_str) > len(text):
-                                    text = table_str
-                        except Exception:
-                            pass
+                    if text:
+                        page_parts.append(text)
 
-                    # If still insufficient text and OCR is enabled, fall back
-                    if len(text) < self._min_text_threshold and self._enable_ocr:
+                    # --- 2. ALWAYS extract tables (new in v2.2) ---
+                    try:
+                        tables = page.extract_tables()
+                        if tables:
+                            for table in tables:
+                                if table and len(table) > 0:
+                                    md_table = self._format_table_as_markdown(table)
+                                    if md_table:
+                                        page_parts.append(md_table)
+                    except Exception as e:
+                        logger.debug("Table extraction failed on page %d: %s", page_num, e)
+
+                    # --- 3. If still no content, try OCR ---
+                    page_text = "\n\n".join(page_parts).strip()
+
+                    if len(page_text) < self._min_text_threshold and self._enable_ocr:
                         ocr_text = self._ocr_page(file_path, page_num)
-                        if ocr_text and len(ocr_text) > len(text):
-                            text = ocr_text
+                        if ocr_text and len(ocr_text) > len(page_text):
+                            page_text = ocr_text
                             ocr_page_count += 1
 
-                    if text:
-                        pages_text.append(text)
+                    if page_text:
+                        pages_text.append(page_text)
 
         except Exception as e:
             error_str = str(e).lower()
@@ -239,23 +311,45 @@ class TextExtractor:
     # ------------------------------------------------------------------
 
     def _extract_docx(self, file_path: str) -> ExtractionResult:
-        """Extract text from DOCX/DOCM using python-docx (paragraphs + tables)."""
+        """
+        Extract text from DOCX/DOCM using python-docx.
+
+        CHANGED (v2.2): Tables are now formatted as markdown with header
+        row and separator. Table position is interleaved with paragraphs
+        by walking the document body XML element order, so content appears
+        in the same order as the original document.
+        """
         try:
             from docx import Document
+            from docx.table import Table as DocxTable
+            from docx.text.paragraph import Paragraph
 
             doc = Document(file_path)
             parts = []
 
-            for p in doc.paragraphs:
-                text = p.text.strip()
-                if text:
-                    parts.append(text)
+            # Walk the document body in element order to interleave
+            # paragraphs and tables correctly.
+            for element in doc.element.body:
+                tag = element.tag.split("}")[-1]  # strip namespace
 
-            for table in doc.tables:
-                for row in table.rows:
-                    cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
-                    if cells:
-                        parts.append(" | ".join(cells))
+                if tag == "p":
+                    # It's a paragraph
+                    para = Paragraph(element, doc)
+                    text = para.text.strip()
+                    if text:
+                        parts.append(text)
+
+                elif tag == "tbl":
+                    # It's a table — format as markdown
+                    table = DocxTable(element, doc)
+                    rows = []
+                    for row in table.rows:
+                        cells = [cell.text.strip() for cell in row.cells]
+                        rows.append(cells)
+
+                    md_table = self._format_table_as_markdown(rows)
+                    if md_table:
+                        parts.append(md_table)
 
             combined = "\n\n".join(parts)
 
@@ -319,7 +413,13 @@ class TextExtractor:
     # ------------------------------------------------------------------
 
     def _extract_xlsx(self, file_path: str) -> ExtractionResult:
-        """Extract text from Excel files using openpyxl."""
+        """
+        Extract text from Excel files using openpyxl.
+
+        CHANGED (v2.2): First row is treated as headers. Remaining rows
+        are formatted as a markdown table per sheet. This preserves column
+        relationships that were lost in the old pipe-separated format.
+        """
         try:
             from openpyxl import load_workbook
 
@@ -329,19 +429,22 @@ class TextExtractor:
 
             for sheet_name in wb.sheetnames:
                 ws = wb[sheet_name]
-                sheet_rows = []
+                all_rows = []
 
                 for row in ws.iter_rows(values_only=True):
-                    cells = [str(c).strip() for c in row if c is not None and str(c).strip()]
-                    if cells:
-                        sheet_rows.append(" | ".join(cells))
+                    cells = [str(c).strip() if c is not None else "" for c in row]
+                    # Keep row if it has at least one non-empty cell
+                    if any(cell for cell in cells):
+                        all_rows.append(cells)
 
-                if sheet_rows:
-                    parts.append(f"--- Sheet: {sheet_name} ---")
-                    parts.extend(sheet_rows)
+                if all_rows:
+                    parts.append(f"**Sheet: {sheet_name}**")
+                    md_table = self._format_table_as_markdown(all_rows)
+                    if md_table:
+                        parts.append(md_table)
 
             wb.close()
-            combined = "\n".join(parts)
+            combined = "\n\n".join(parts)
 
             return ExtractionResult(
                 file_path=file_path,
