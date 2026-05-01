@@ -3,11 +3,19 @@ Answer generator supporting two provider modes:
   - "ollama"      : self-hosted Ollama via OpenAI-compatible API (default)
   - "huggingface" : HuggingFace Inference API
 
-Controlled by the LLM_PROVIDER environment variable.
+Takes retrieved and reranked document chunks, builds a domain-specific
+prompt, and generates a grounded answer via HuggingFace InferenceClient.
+Includes confidence scoring based on retrieval quality.
+
+CHANGES (v2.1 — 24 Apr 2026):
+  - Default temperature changed from 0.1 to 0.0 for consistent answers
+  - Sources output now includes clean document names (not raw paths)
+  - Removed chunk_id from client-facing sources (internal detail)
 """
 
 import logging
 import os
+import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -93,22 +101,59 @@ class AnswerGenerator:
             confidence = min(1.0, confidence + 0.05)
         return round(confidence, 3)
 
-    def generate(self, question: str, reranked_results: list) -> GeneratedAnswer:
+    @staticmethod
+    def _clean_source_name(raw_path: str, subfolder: str = "") -> str:
+        """Convert raw file path to clean document name for API response."""
+        name = os.path.basename(raw_path)
+        name = os.path.splitext(name)[0]
+        name = re.sub(r'\s*ID\s+\d{2}[\s.]\d{2}[\s.]\d{2,4}', '', name)
+        name = re.sub(r'\s*_?\s*v\.?\d+\s+\d{2}\.\d{2}\.\d{2,4}', '', name)
+        name = re.sub(r'\s*_?\s*Issue\s+\d+\s+\d{2}\s+\d{2}\s+\d{4}', '', name)
+        name = re.sub(r'\s*_?\s*REV\s+\w+\s*', ' ', name)
+        name = name.replace(' _ ', ' — ').replace('_', ' ')
+        name = re.sub(r'\s+', ' ', name).strip()
+        if subfolder and "MSDS" in subfolder and "MSDS" not in name:
+            name = f"{name} MSDS"
+        return name
+
+    def generate(
+        self,
+        question: str,
+        reranked_results: list,
+    ) -> GeneratedAnswer:
+        """
+        Generate an answer from reranked retrieval results.
+
+        Args:
+            question: The user's question.
+            reranked_results: List of RankedResult objects from the reranker.
+
+        Returns:
+            GeneratedAnswer with the response, sources, and confidence.
+        """
         chunks = []
         sources = []
+        seen_files = set()
+
         for r in reranked_results:
+            raw_file = r.metadata.get("source_file", "Unknown")
+            subfolder = r.metadata.get("subfolder", "")
+
             chunks.append({
                 "text": r.document,
-                "source_file": r.metadata.get("source_file", "Unknown"),
-                "subfolder": r.metadata.get("subfolder", ""),
-            })
-            sources.append({
-                "file": r.metadata.get("source_file", "Unknown"),
-                "subfolder": r.metadata.get("subfolder", ""),
-                "score": round(r.reranked_score, 3),
-                "chunk_id": r.chunk_id,
+                "source_file": raw_file,
+                "subfolder": subfolder,
             })
 
+            # Deduplicate sources — only list each document once
+            if raw_file not in seen_files:
+                seen_files.add(raw_file)
+                sources.append({
+                    "document": self._clean_source_name(raw_file, subfolder),
+                    "category": subfolder,
+                })
+
+        # Build prompt
         system_prompt, user_prompt = PromptTemplates.build_prompt(question, chunks)
         confidence = self._compute_confidence(reranked_results)
         messages = [
@@ -147,7 +192,10 @@ class AnswerGenerator:
         except Exception as e:
             logger.error("Generation failed (%s): %s", self._provider, e)
             return GeneratedAnswer(
-                answer=f"Generation failed: {e}",
+                answer=(
+                    "An error occurred while processing your question. "
+                    "Please try again or contact your supervisor."
+                ),
                 sources=sources,
                 confidence=confidence,
                 model=self._model,
