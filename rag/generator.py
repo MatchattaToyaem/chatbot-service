@@ -49,8 +49,22 @@ class AnswerGenerator:
 
         if self._provider == "huggingface":
             self._init_huggingface()
+        elif self._provider == "azure-foundry":
+            self._init_azure_foundry()
         else:
             self._init_ollama()
+
+    def _init_azure_foundry(self):
+        from openai import OpenAI
+        key = os.getenv("AZURE_FOUNDRY_KEY", "")
+        if not key:
+            raise RuntimeError("AZURE_FOUNDRY_KEY is required for LLM_PROVIDER=azure-foundry")
+        endpoint = os.getenv("AZURE_FOUNDRY_ENDPOINT", "")
+        if not endpoint:
+            raise RuntimeError("AZURE_FOUNDRY_ENDPOINT is required for LLM_PROVIDER=azure-foundry")
+        self._model = os.getenv("AZURE_FOUNDRY_MODEL", self._model)
+        self._client = OpenAI(base_url=endpoint, api_key=key)
+        logger.info("LLM provider: Azure Foundry | endpoint=%s | model=%s", endpoint, self._model)
 
     def _init_ollama(self):
         from openai import OpenAI
@@ -110,9 +124,6 @@ class AnswerGenerator:
                     max_tokens=self._max_tokens,
                     temperature=self._temperature,
                 )
-                answer = response.choices[0].message.content
-                prompt_tokens = getattr(response.usage, "prompt_tokens", None)
-                eval_tokens = getattr(response.usage, "completion_tokens", None)
             else:
                 response = self._client.chat.completions.create(
                     model=self._model,
@@ -120,9 +131,9 @@ class AnswerGenerator:
                     max_tokens=self._max_tokens,
                     temperature=self._temperature,
                 )
-                answer = response.choices[0].message.content
-                prompt_tokens = getattr(response.usage, "prompt_tokens", None)
-                eval_tokens = getattr(response.usage, "completion_tokens", None)
+            answer = response.choices[0].message.content
+            prompt_tokens = getattr(response.usage, "prompt_tokens", None)
+            eval_tokens = getattr(response.usage, "completion_tokens", None)
 
             return GeneratedAnswer(
                 answer=answer,
