@@ -4,12 +4,8 @@ RAG Service — the main orchestrator for the O'Connors IMS chatbot.
 Ties together:
     1. Retrieval (BGE-M3 embedding -> Hybrid BM25 + ChromaDB vector search)
     2. Ranking (Reciprocal Rank Fusion from hybrid retriever)
-<<<<<<< HEAD
     3. Form detection (boosts exact document when user asks by code)
     4. Generation (LLM via Ollama / HuggingFace / Azure Foundry)
-=======
-    3. Generation (HuggingFace Inference API — Llama-3.2-3B-Instruct)
->>>>>>> 4b1339a80e31c196d3e042fa733b61ce2896d476
 
 This is the single class Mat's backend calls for end-to-end Q&A.
 
@@ -29,7 +25,7 @@ from config import AppConfig
 from ingest.embedder import Embedder
 from ingest.store import ChromaStore
 from rag.reranker import Reranker, RankedResult
-from rag.generator import AnswerGenerator
+from rag.generator import AnswerGenerator, GeneratedAnswer
 from rag.hybrid_retriever import HybridRetriever
 
 logger = logging.getLogger(__name__)
@@ -100,13 +96,9 @@ class RAGService:
             max_per_source=3,
         )
 
-<<<<<<< HEAD
         # Answer generator (supports Ollama / HuggingFace / Azure Foundry)
-=======
-        # Answer generator (HuggingFace Inference API)
->>>>>>> 4b1339a80e31c196d3e042fa733b61ce2896d476
         self._generator = AnswerGenerator(
-            model=os.getenv("LLM_MODEL", "llama3.2:3b"),
+            model=os.getenv("HF_MODEL", "meta-llama/Llama-3.2-3B-Instruct"),
             temperature=0.1,
         )
 
@@ -122,8 +114,8 @@ class RAGService:
     def retrieve(
         self,
         question: str,
-        retrieval_k: Optional[int] = None,
-        final_k: Optional[int] = None,
+        retrieval_k: int = None,
+        final_k: int = None,
     ) -> list[RankedResult]:
         """
         Retrieve relevant chunks for a question using hybrid search.
@@ -209,8 +201,8 @@ class RAGService:
     def ask(
         self,
         question: str,
-        retrieval_k: Optional[int] = None,
-        final_k: Optional[int] = None,
+        retrieval_k: int = None,
+        final_k: int = None,
     ) -> RAGResponse:
         """
         Full RAG pipeline: retrieve -> rerank -> generate answer.
