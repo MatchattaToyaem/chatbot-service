@@ -15,15 +15,12 @@ load_dotenv()
 @dataclass(frozen=True)
 class ChromaConfig:
     """ChromaDB connection settings."""
-    host: str = os.getenv(
-        "CHROMA_HOST",
-        "chroma-db-ai-platform.proudground-90080d26.australiaeast.azurecontainerapps.io",
-    )
-    port: int = int(os.getenv("CHROMA_PORT", "443"))
-    ssl: bool = os.getenv("CHROMA_SSL", "true").lower() == "true"
-    collection: str = os.getenv("CHROMA_COLLECTION", "oconnors_ims_bge_m3")
-    mode: str = os.getenv("CHROMA_MODE", "remote")
-    local_path: str = os.getenv("CHROMA_LOCAL_PATH", "./chromadb_local")
+    host: str = os.getenv("CHROMADB_HOST", "4.237.196.89")
+    port: int = int(os.getenv("CHROMADB_PORT", "8000"))
+    ssl: bool = os.getenv("CHROMADB_SSL", "false").lower() == "true"
+    collection: str = os.getenv("COLLECTION_NAME", "oconnors_ims")
+    mode: str = os.getenv("CHROMA_MODE", "http")
+    local_path: str = os.getenv("CHROMADB_PATH", "./chromadb_data")
 
 
 @dataclass(frozen=True)

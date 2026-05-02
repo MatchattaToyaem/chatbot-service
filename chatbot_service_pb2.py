@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x15\x63hatbot_service.proto\x12\x0e\x63hatbotservice\"\x1f\n\rPromptRequest\x12\x0e\n\x06prompt\x18\x01 \x01(\t\" \n\x0eInferenceReply\x12\x0e\n\x06result\x18\x01 \x01(\t2i\n\x12HuggingFaceService\x12S\n\x10GenerateResponse\x12\x1d.chatbotservice.PromptRequest\x1a\x1e.chatbotservice.InferenceReply\"\x00\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x15\x63hatbot_service.proto\x12\x0e\x63hatbotservice\"\x1f\n\rPromptRequest\x12\x0e\n\x06prompt\x18\x01 \x01(\t\"J\n\x06Source\x12\x0c\n\x04\x66ile\x18\x01 \x01(\t\x12\x11\n\tsubfolder\x18\x02 \x01(\t\x12\r\n\x05score\x18\x03 \x01(\x02\x12\x10\n\x08\x63hunk_id\x18\x04 \x01(\t\"l\n\x0eInferenceReply\x12\x0e\n\x06result\x18\x01 \x01(\t\x12\x12\n\nconfidence\x18\x02 \x01(\x02\x12\'\n\x07sources\x18\x03 \x03(\x0b\x32\x16.chatbotservice.Source\x12\r\n\x05model\x18\x04 \x01(\t2i\n\x12HuggingFaceService\x12S\n\x10GenerateResponse\x12\x1d.chatbotservice.PromptRequest\x1a\x1e.chatbotservice.InferenceReply\"\x00\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,8 +33,10 @@ if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
   _globals['_PROMPTREQUEST']._serialized_start=41
   _globals['_PROMPTREQUEST']._serialized_end=72
-  _globals['_INFERENCEREPLY']._serialized_start=74
-  _globals['_INFERENCEREPLY']._serialized_end=106
-  _globals['_HUGGINGFACESERVICE']._serialized_start=108
-  _globals['_HUGGINGFACESERVICE']._serialized_end=213
+  _globals['_SOURCE']._serialized_start=74
+  _globals['_SOURCE']._serialized_end=148
+  _globals['_INFERENCEREPLY']._serialized_start=150
+  _globals['_INFERENCEREPLY']._serialized_end=258
+  _globals['_HUGGINGFACESERVICE']._serialized_start=260
+  _globals['_HUGGINGFACESERVICE']._serialized_end=365
 # @@protoc_insertion_point(module_scope)

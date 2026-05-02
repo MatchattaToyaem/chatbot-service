@@ -1,5 +1,7 @@
 """
-Answer generator using HuggingFace Inference API.
+Answer generator supporting two provider modes:
+  - "ollama"      : self-hosted Ollama via OpenAI-compatible API (default)
+  - "huggingface" : HuggingFace Inference API
 
 Takes retrieved and reranked document chunks, builds a domain-specific
 prompt, and generates a grounded answer via HuggingFace InferenceClient.
@@ -16,8 +18,6 @@ import os
 import re
 from dataclasses import dataclass
 from typing import Optional
-
-from huggingface_hub import InferenceClient
 
 from rag.prompts import PromptTemplates
 
@@ -37,43 +37,68 @@ class GeneratedAnswer:
 
 class AnswerGenerator:
     """
-    Generates answers from retrieved IMS document chunks using HuggingFace Inference API.
+    Generates answers from retrieved IMS document chunks.
 
-    The generator:
-        1. Formats chunks into a structured context with source labels.
-        2. Builds a system + user prompt tuned for faithfulness.
-        3. Calls the HuggingFace Inference API to generate an answer.
-        4. Computes a confidence score based on retrieval distances.
+    Provider is selected via LLM_PROVIDER env var:
+        LLM_PROVIDER=ollama       → self-hosted Ollama (OpenAI-compatible)
+        LLM_PROVIDER=huggingface  → HuggingFace Inference API
     """
 
     def __init__(
         self,
-        model: str = "meta-llama/Llama-3.2-3B-Instruct",
+        model: str = "llama3.2:3b",
         temperature: float = 0.1,
         max_tokens: int = 1024,
     ):
         self._model = model
         self._temperature = temperature
         self._max_tokens = max_tokens
+        self._provider = os.getenv("LLM_PROVIDER", "ollama").lower()
 
+        if self._provider == "huggingface":
+            self._init_huggingface()
+        elif self._provider == "azure-foundry":
+            self._init_azure_foundry()
+        else:
+            self._init_ollama()
+
+    def _init_azure_foundry(self):
+        from openai import OpenAI
+        key = os.getenv("AZURE_FOUNDRY_KEY", "")
+        if not key:
+            raise RuntimeError("AZURE_FOUNDRY_KEY is required for LLM_PROVIDER=azure-foundry")
+        endpoint = os.getenv("AZURE_FOUNDRY_ENDPOINT", "")
+        if not endpoint:
+            raise RuntimeError("AZURE_FOUNDRY_ENDPOINT is required for LLM_PROVIDER=azure-foundry")
+        self._model = os.getenv("AZURE_FOUNDRY_MODEL", self._model)
+        self._client = OpenAI(base_url=endpoint, api_key=key)
+        logger.info("LLM provider: Azure Foundry | endpoint=%s | model=%s", endpoint, self._model)
+
+    def _init_ollama(self):
+        from openai import OpenAI
+        endpoint = os.getenv("OLLAMA_ENDPOINT", "http://ollama-service:11434")
+        self._client = OpenAI(base_url=f"{endpoint}/v1", api_key="ollama")
+        logger.info("LLM provider: Ollama | endpoint=%s | model=%s", endpoint, self._model)
+
+    def _init_huggingface(self):
+        from huggingface_hub import InferenceClient
         token = os.getenv("HUGGING_FACE_HUB_TOKEN", "")
         if not token:
-            raise RuntimeError("HUGGING_FACE_HUB_TOKEN environment variable is not set")
-
-        self._client = InferenceClient(model=self._model, token=token)
-        logger.info("HuggingFace InferenceClient initialized with model: %s", self._model)
+            raise RuntimeError("HUGGING_FACE_HUB_TOKEN is required for LLM_PROVIDER=huggingface")
+        hf_model = os.getenv("HF_MODEL", "meta-llama/Llama-3.1-8B-Instruct")
+        hf_provider = os.getenv("HF_PROVIDER", "featherless-ai")
+        self._model = hf_model
+        self._client = InferenceClient(token=token, provider=hf_provider)
+        logger.info("LLM provider: HuggingFace | model=%s | provider=%s", hf_model, hf_provider)
 
     def _compute_confidence(self, reranked_results: list) -> float:
         if not reranked_results:
             return 0.0
-
         scores = [r.reranked_score for r in reranked_results]
         avg_score = sum(scores) / len(scores)
         confidence = min(1.0, max(0.0, avg_score))
-
         if reranked_results[0].boost_reasons:
             confidence = min(1.0, confidence + 0.05)
-
         return round(confidence, 3)
 
     @staticmethod
@@ -131,29 +156,41 @@ class AnswerGenerator:
         # Build prompt
         system_prompt, user_prompt = PromptTemplates.build_prompt(question, chunks)
         confidence = self._compute_confidence(reranked_results)
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
 
         try:
-            response = self._client.chat_completion(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                max_tokens=self._max_tokens,
-                temperature=self._temperature,
-            )
+            if self._provider == "huggingface":
+                response = self._client.chat_completion(
+                    model=self._model,
+                    messages=messages,
+                    max_tokens=self._max_tokens,
+                    temperature=self._temperature,
+                )
+            else:
+                response = self._client.chat.completions.create(
+                    model=self._model,
+                    messages=messages,
+                    max_tokens=self._max_tokens,
+                    temperature=self._temperature,
+                )
             answer = response.choices[0].message.content
+            prompt_tokens = getattr(response.usage, "prompt_tokens", None)
+            eval_tokens = getattr(response.usage, "completion_tokens", None)
 
             return GeneratedAnswer(
                 answer=answer,
                 sources=sources,
                 confidence=confidence,
                 model=self._model,
-                prompt_tokens=getattr(response.usage, "prompt_tokens", None),
-                eval_tokens=getattr(response.usage, "completion_tokens", None),
+                prompt_tokens=prompt_tokens,
+                eval_tokens=eval_tokens,
             )
 
         except Exception as e:
-            logger.error("HuggingFace generation failed: %s", e)
+            logger.error("Generation failed (%s): %s", self._provider, e)
             return GeneratedAnswer(
                 answer=(
                     "An error occurred while processing your question. "

@@ -10,7 +10,13 @@ sentence-transformers>=2.5.1
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
 
-# Ollama API calls
+# HuggingFace (used by sentence-transformers for bge-m3)
+huggingface_hub>=0.23.0
+
+# Ollama / OpenAI-compatible LLM client
+openai>=1.0.0
+
+# HTTP client (used by chromadb)
 requests>=2.28.0
 
 # Text splitting (for ingest)
@@ -19,6 +25,8 @@ langchain-text-splitters>=0.3.0
 # Config
 python-dotenv>=1.0.0
 
+grpcio>=1.60.0
+protobuf>=6.31.1
 # Document extraction (ingest)
 pdfplumber>=0.11.0
 python-docx>=1.1.0
@@ -26,6 +34,5 @@ openpyxl>=3.1.0
 pdf2image>=1.17.0
 
 # Pinned — do not change
-protobuf==3.20.2
 numpy<2.0
 rank_bm25

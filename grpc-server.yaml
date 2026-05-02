@@ -3,7 +3,7 @@ resourceGroup: ai-platform
 type: Microsoft.App/containerApps
 name: grpc-server
 identity:
-  type: None
+  type: SystemAssigned
 properties:
   environmentId: /subscriptions/53f34d3b-bdc7-4e68-89c4-0e4f1947eb31/resourceGroups/ai-platform/providers/Microsoft.App/managedEnvironments/managedEnvironment-aiplatform-8573
   configuration:
@@ -16,6 +16,9 @@ properties:
         value: PLACEHOLDER_ACR
       - name: hf-token
         value: PLACEHOLDER_HF
+      - name: azure-ai-key
+        keyVaultUrl: https://ai-platform-keyvault-01.vault.azure.net/secrets/azure-ai-access-key
+        identity: system
     ingress:
       external: true
       targetPort: 50051
@@ -26,8 +29,8 @@ properties:
       - name: grpc-server
         image: oconnoraiplatform.azurecr.io/grpc-server:latest
         resources:
-          cpu: 0.5
-          memory: 1Gi
+          cpu: 2.0
+          memory: 4Gi
         env:
           - name: PORT
             value: "50051"
@@ -35,9 +38,52 @@ properties:
             secretRef: hf-token
           - name: LOG_FILE
             value: "/var/log/app/chatbot-service.log"
+          - name: CHROMA_MODE
+            value: "http"
+          - name: CHROMADB_HOST
+            value: "20.167.26.159"
+          - name: CHROMADB_PORT
+            value: "8000"
+          - name: CHROMADB_SSL
+            value: "false"
+          - name: COLLECTION_NAME
+            value: "oconnors_ims_bge_m3"
+          - name: LLM_PROVIDER
+            value: "azure-foundry"
+          - name: HF_MODEL
+            value: "meta-llama/Llama-3.1-8B-Instruct"
+          - name: HF_PROVIDER
+            value: "featherless-ai"
+          - name: AZURE_FOUNDRY_KEY
+            secretRef: azure-ai-key
+          - name: AZURE_FOUNDRY_ENDPOINT
+            value: ""
+          - name: AZURE_FOUNDRY_MODEL
+            value: ""
+          - name: OLLAMA_ENDPOINT
+            value: "http://ollama-service.internal.proudground-90080d26.australiaeast.azurecontainerapps.io"
+          - name: LLM_MODEL
+            value: "meta-llama/Llama-3.1-8B"
         volumeMounts:
           - volumeName: app-logs
             mountPath: /var/log/app
+        probes:
+          - type: startup
+            tcpSocket:
+              port: 50051
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 120
+          - type: readiness
+            tcpSocket:
+              port: 50051
+            periodSeconds: 10
+            failureThreshold: 3
+          - type: liveness
+            tcpSocket:
+              port: 50051
+            periodSeconds: 30
+            failureThreshold: 3
 
       - name: filebeat
         image: oconnoraiplatform.azurecr.io/filebeat:v5
