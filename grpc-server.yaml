@@ -47,7 +47,7 @@ properties:
           - name: CHROMADB_SSL
             value: "false"
           - name: COLLECTION_NAME
-            value: "oconnors_ims_bge_m3"
+            value: "oconnors_ims_bge_m3_v3_force_ocr"
           - name: LLM_PROVIDER
             value: "azure-foundry"
           - name: HF_MODEL
