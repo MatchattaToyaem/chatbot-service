@@ -73,7 +73,7 @@ class AIServiceServicer(chatbot_service_pb2_grpc.HuggingFaceServiceServicer):
             response = self.rag.ask(question=request.prompt)
             sources = [
                 chatbot_service_pb2.Source(
-                    file=s.get("file", ""),
+                    file=s.get("document_path", s.get("file", "")),
                     subfolder=s.get("subfolder", ""),
                     score=s.get("score", 0.0),
                     chunk_id=s.get("chunk_id", ""),
