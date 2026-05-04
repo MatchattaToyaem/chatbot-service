@@ -9,6 +9,8 @@ Ties together:
 
 This is the single class Mat's backend calls for end-to-end Q&A.
 
+CHANGES (v2.4 — 05 May 2026):
+  - Set temperature=0.0 for deterministic answers (same question = same answer every time)
 CHANGES (v2.3 — 03 May 2026):
   - Fixed form code regex to handle letter suffixes (OF113a, OF15A, CF06_1)
 CHANGES (v2.2 — 02 May 2026):
@@ -106,9 +108,11 @@ class RAGService:
         )
 
         # Answer generator (supports Ollama / HuggingFace / Azure Foundry)
+        # temperature=0.0 ensures deterministic answers — same question always
+        # gets the same answer. Critical for workplace safety consistency.
         self._generator = AnswerGenerator(
             model=os.getenv("HF_MODEL", "meta-llama/Llama-3.2-3B-Instruct"),
-            temperature=0.1,
+            temperature=0.0,
         )
 
         self._collection = None

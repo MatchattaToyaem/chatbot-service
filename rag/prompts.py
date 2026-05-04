@@ -1,23 +1,6 @@
 """
 Prompt templates for O'Connors IMS chatbot answer generation.
 
-These prompts are tuned for high faithfulness — the LLM must ground
-its answers strictly in the retrieved document chunks and cite sources.
-Any information not present in the context must be flagged as such.
-
-The system prompt establishes O'Connors' domain (HVAC, mechanical
-engineering, Australian workplace safety) and instructs the model
-to behave as a knowledgeable IMS assistant.
-
-CHANGES (v2.2 — 29 Apr 2026):
-  - Removed "Source:" line from answer body (sources shown in UI sidebar)
-  - Added formatting rules: bullet points, headers, structured layout
-  - Prompt now instructs LLM to keep answers scannable for field technicians
-CHANGES (v2.1 — 24 Apr 2026):
-  - Prompt now instructs LLM to cite sources naturally (not "Document 1:")
-  - format_context uses clean document names (not raw file paths)
-  - Added rules 8-12 for technical precision (numbers, standards, GHS, PPE)
-  - Added _clean_source_name helper to convert paths to readable names
 """
 
 import os
@@ -42,10 +25,11 @@ class PromptTemplates:
         "2. If the context does not contain enough information to answer the "
         "question, say: \"The available IMS documents do not contain sufficient "
         "information to answer this question.\"\n"
-        "3. Cite sources naturally within your answer using the document name "
-        "shown in square brackets. For example: \"According to the R134A "
-        "Material Safety Data Sheet, Section 7...\" or \"The After Hours "
-        "On-Call Coverage Policy states...\"\n"
+        "3. Do NOT cite or mention any source names, document names, or "
+        "references inside your answer. Do NOT use [square brackets] to "
+        "reference documents. Do NOT write 'According to [document]' or "
+        "'[document name]' anywhere. Just answer the question directly. "
+        "Source attribution is handled separately by the system.\n"
         "4. NEVER show raw file paths, document numbers (Document 1, Document 2), "
         "chunk IDs, confidence scores, or any internal system identifiers in "
         "your answer. The user is a field technician, not a developer.\n"
@@ -55,16 +39,20 @@ class PromptTemplates:
         "in the order they appear in the source document.\n"
         "7. Use professional language appropriate for a workplace safety context.\n"
         "8. If multiple documents contain relevant information, synthesise them "
-        "and cite each source naturally.\n"
+        "into a single coherent answer. Do not mention which document each "
+        "piece of information came from.\n"
         "9. When referencing Australian Standards, always include the full "
         "standard number (e.g., AS/NZS 3666.1-2011).\n"
         "10. For MSDS/SDS questions, always specify the GHS section number and "
         "title (e.g., Section 7: Handling and Storage).\n"
         "11. For PPE requirements, list each item specifically (e.g., "
         "\"chemical-resistant gloves, safety goggles, P2 respirator\").\n"
-        "12. Do NOT include any \"Source:\", \"References:\", or \"Referred Docs:\" "
-        "section at the end of your answer. Source attribution is handled "
-        "separately by the system.\n\n"
+        "12. NEVER include any of these inside your answer: source names, "
+        "document titles, [square bracket citations], 'Source:', 'References:', "
+        "'Referred Docs:', 'According to [document]', file names, or any form "
+        "of attribution. The system handles source display separately. Your "
+        "answer must read as if you are a knowledgeable colleague answering "
+        "from memory.\n\n"
         "FORMATTING RULES:\n"
         "- Structure your answer for easy scanning by field technicians.\n"
         "- Use **bold headings** to separate major sections of the answer.\n"
@@ -85,8 +73,8 @@ class PromptTemplates:
         "Question: {question}\n\n"
         "Provide a clear, well-structured answer based strictly on the context "
         "documents above. Use headings and bullet points where appropriate. "
-        "Cite sources naturally within the answer. Do not add a source list "
-        "at the end."
+        "Do NOT mention any document names or sources inside the answer. "
+        "Do NOT use [square brackets] for citations. Just answer directly."
     )
 
     @staticmethod
@@ -142,7 +130,8 @@ class PromptTemplates:
         Format retrieved chunks into a context string for the prompt.
 
         Each chunk is labelled with a clean, human-readable document name
-        (not raw file paths) for natural citation in the generated answer.
+        (not raw file paths) so the LLM has context about which document
+        the text came from, even though it won't cite them in the answer.
         """
         parts = []
         for i, chunk in enumerate(chunks):
