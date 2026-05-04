@@ -4,13 +4,22 @@ RAG Service — the main orchestrator for the O'Connors IMS chatbot.
 Ties together:
     1. Retrieval (BGE-M3 embedding -> Hybrid BM25 + ChromaDB vector search)
     2. Ranking (Reciprocal Rank Fusion from hybrid retriever)
-    3. Generation (HuggingFace Inference API — Llama-3.2-3B-Instruct)
+    3. Form detection (boosts exact document when user asks by code)
+    4. Generation (LLM via Ollama / HuggingFace / Azure Foundry)
 
 This is the single class Mat's backend calls for end-to-end Q&A.
+
+CHANGES (v2.3 — 03 May 2026):
+  - Fixed form code regex to handle letter suffixes (OF113a, OF15A, CF06_1)
+CHANGES (v2.2 — 02 May 2026):
+  - Added form/document code detection: when user asks for a specific
+    form (OF140, CF18, SOP-001, etc.), chunks from that exact document
+    are boosted to the top of retrieval results. Fixes Adam's feedback #5.
 """
 
 import logging
 import os
+import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -18,10 +27,25 @@ from config import AppConfig
 from ingest.embedder import Embedder
 from ingest.store import ChromaStore
 from rag.reranker import Reranker, RankedResult
-from rag.generator import AnswerGenerator
+from rag.generator import AnswerGenerator, GeneratedAnswer
 from rag.hybrid_retriever import HybridRetriever
 
 logger = logging.getLogger(__name__)
+
+
+# Regex for O'Connors document codes
+# Handles: OF140, OF113a, OF15A, CF18, CF06_1, SOP-001, SWMS 024, etc.
+_FORM_CODE_RE = re.compile(
+    r'\b(OF\d{1,4}[a-zA-Z_]?'
+    r'|CF\d{1,4}[a-zA-Z_]?'
+    r'|SOP-?\d{1,4}'
+    r'|SWMS\s*\d{1,4}'
+    r'|AHP\d{1,4}'
+    r'|EP\d{1,4}'
+    r'|FP\s*\d{1,4}'
+    r'|WP\d{1,4})',
+    re.IGNORECASE
+)
 
 
 @dataclass
@@ -50,9 +74,11 @@ class RAGService:
     Pipeline:
         1. Embed the question with BGE-M3.
         2. Hybrid retrieve: BM25 keyword + vector search, fused with RRF.
-        3. Take top-5 fused results (reranker bypassed — RRF handles ranking).
-        4. Generate answer via Ollama with domain-specific prompts.
-        5. Return answer + sources + confidence score.
+        3. Form detection: if user asks for OF140/CF18/SOP-001 etc.,
+           boost chunks from that exact document to the top.
+        4. Take top-5 fused results (reranker bypassed — RRF handles ranking).
+        5. Generate answer via LLM with domain-specific prompts.
+        6. Return answer + sources + confidence score.
     """
 
     def __init__(self, config: Optional[AppConfig] = None):
@@ -79,9 +105,9 @@ class RAGService:
             max_per_source=3,
         )
 
-        # Answer generator (HuggingFace Inference API)
+        # Answer generator (supports Ollama / HuggingFace / Azure Foundry)
         self._generator = AnswerGenerator(
-            model=os.getenv("LLM_MODEL", "llama3.2:3b"),
+            model=os.getenv("HF_MODEL", "meta-llama/Llama-3.2-3B-Instruct"),
             temperature=0.1,
         )
 
@@ -97,12 +123,15 @@ class RAGService:
     def retrieve(
         self,
         question: str,
-        retrieval_k: Optional[int] = None,
-        final_k: Optional[int] = None,
+        retrieval_k: int = None,
+        final_k: int = None,
     ) -> list[RankedResult]:
         """
         Retrieve relevant chunks for a question using hybrid search.
         Uses BM25 + vector search with Reciprocal Rank Fusion (RRF).
+
+        If the question contains a form code (OF140, CF18, SOP-001, etc.),
+        chunks from that exact document are boosted to the top.
 
         Args:
             question: The user's question.
@@ -132,7 +161,7 @@ class RAGService:
             final_k=retrieval_k,  # Pass all to allow selection of top final_k
         )
 
-        # Convert hybrid results to reranker input format
+        # Convert hybrid results to standard format
         hits = []
         for h in hybrid_hits:
             hits.append({
@@ -143,6 +172,24 @@ class RAGService:
             })
 
         logger.info("Hybrid retrieved %d chunks for: '%s'", len(hits), question[:60])
+
+        # ── Form/document code detection ──────────────────────────
+        # When user asks for a specific form (OF140, CF18, SOP-001, etc.),
+        # boost chunks from that exact document to the top of results.
+        # Without this, SWMS documents that *mention* a form can outrank
+        # the actual form itself.
+        form_match = _FORM_CODE_RE.search(question)
+        if form_match:
+            form_code = form_match.group(1).upper().replace(" ", "").replace("-", "")
+            exact = [h for h in hits if form_code in
+                     (h.get("metadata", {}).get("source_file", "") +
+                      h.get("metadata", {}).get("source_path", ""))
+                     .upper().replace(" ", "").replace("-", "")]
+            others = [h for h in hits if h not in exact]
+            hits = exact + others
+            if exact:
+                logger.info("Form detected: %s → %d exact chunks boosted",
+                            form_match.group(1), len(exact))
 
         # With hybrid search, RRF already handles ranking
         # Convert hits to RankedResult format (skip reranker)
@@ -163,8 +210,8 @@ class RAGService:
     def ask(
         self,
         question: str,
-        retrieval_k: Optional[int] = None,
-        final_k: Optional[int] = None,
+        retrieval_k: int = None,
+        final_k: int = None,
     ) -> RAGResponse:
         """
         Full RAG pipeline: retrieve -> rerank -> generate answer.
@@ -233,6 +280,7 @@ class RAGService:
         except Exception as e:
             status["chromadb"] = f"error: {e}"
 
-        status["ollama"] = "n/a (using HuggingFace Inference API)"
+        provider = os.getenv("LLM_PROVIDER", "ollama")
+        status["ollama"] = f"provider: {provider}"
 
         return status
