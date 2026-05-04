@@ -9,6 +9,8 @@ Ties together:
 
 This is the single class Mat's backend calls for end-to-end Q&A.
 
+CHANGES (v2.3 — 03 May 2026):
+  - Fixed form code regex to handle letter suffixes (OF113a, OF15A, CF06_1)
 CHANGES (v2.2 — 02 May 2026):
   - Added form/document code detection: when user asks for a specific
     form (OF140, CF18, SOP-001, etc.), chunks from that exact document
@@ -31,10 +33,17 @@ from rag.hybrid_retriever import HybridRetriever
 logger = logging.getLogger(__name__)
 
 
-# Regex for O'Connors document codes (OF140, CF18, SOP-001, SWMS 024, etc.)
+# Regex for O'Connors document codes
+# Handles: OF140, OF113a, OF15A, CF18, CF06_1, SOP-001, SWMS 024, etc.
 _FORM_CODE_RE = re.compile(
-    r'\b(OF\d{1,4}|CF\d{1,4}|SOP-?\d{1,4}|SWMS\s*\d{1,4}'
-    r'|AHP\d{1,4}|EP\d{1,4}|FP\s*\d{1,4}|WP\d{1,4})\b',
+    r'\b(OF\d{1,4}[a-zA-Z_]?'
+    r'|CF\d{1,4}[a-zA-Z_]?'
+    r'|SOP-?\d{1,4}'
+    r'|SWMS\s*\d{1,4}'
+    r'|AHP\d{1,4}'
+    r'|EP\d{1,4}'
+    r'|FP\s*\d{1,4}'
+    r'|WP\d{1,4})',
     re.IGNORECASE
 )
 
