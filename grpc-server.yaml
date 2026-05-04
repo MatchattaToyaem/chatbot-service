@@ -41,7 +41,7 @@ properties:
           - name: CHROMA_MODE
             value: "http"
           - name: CHROMADB_HOST
-            value: "20.167.26.159"
+            value: "20.248.237.254"
           - name: CHROMADB_PORT
             value: "8000"
           - name: CHROMADB_SSL
@@ -57,9 +57,9 @@ properties:
           - name: AZURE_FOUNDRY_KEY
             secretRef: azure-ai-key
           - name: AZURE_FOUNDRY_ENDPOINT
-            value: ""
+            value: "https://ai-matchattatoyaem17868ai923534470836.services.ai.azure.com/openai/v1/"
           - name: AZURE_FOUNDRY_MODEL
-            value: ""
+            value: "Llama-3.3-70B-Instruct"
           - name: OLLAMA_ENDPOINT
             value: "http://ollama-service.internal.proudground-90080d26.australiaeast.azurecontainerapps.io"
           - name: LLM_MODEL

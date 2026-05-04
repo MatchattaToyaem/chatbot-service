@@ -149,8 +149,10 @@ class AnswerGenerator:
             if raw_file not in seen_files:
                 seen_files.add(raw_file)
                 sources.append({
-                    "document": self._clean_source_name(raw_file, subfolder),
-                    "category": subfolder,
+                    "file": self._clean_source_name(raw_file, subfolder),
+                    "subfolder": subfolder,
+                    "score": round(r.reranked_score, 3),
+                    "chunk_id": r.chunk_id,
                 })
 
         # Build prompt
