@@ -44,9 +44,6 @@ definitions:
             fi
 
 pipelines:
-  default:
-    - step: *build-push
-
   branches:
     main:
       - step: *build-push
