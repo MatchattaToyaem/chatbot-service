@@ -77,6 +77,24 @@ class PromptTemplates:
         "Do NOT use [square brackets] for citations. Just answer directly."
     )
 
+    # Used when there is prior conversation context available
+    USER_PROMPT_WITH_HISTORY_TEMPLATE = (
+        "Recent conversation:\n"
+        "---\n"
+        "{history}\n"
+        "---\n\n"
+        "Context documents:\n"
+        "---\n"
+        "{context}\n"
+        "---\n\n"
+        "Question: {question}\n\n"
+        "Provide a clear, well-structured answer based strictly on the context "
+        "documents above. The conversation history is provided so you can "
+        "understand follow-up intent — do NOT answer from it directly. "
+        "Do NOT mention any document names or sources inside the answer. "
+        "Do NOT use [square brackets] for citations. Just answer directly."
+    )
+
     @staticmethod
     def _clean_source_name(source_file: str, subfolder: str = "") -> str:
         """
@@ -145,20 +163,48 @@ class PromptTemplates:
         return "\n\n".join(parts)
 
     @classmethod
-    def build_prompt(cls, question: str, chunks: list[dict]) -> tuple[str, str]:
+    def _format_chat_history(cls, history: list[dict]) -> str:
+        """Format last N Q&A pairs as readable conversation text."""
+        parts = []
+        for i, entry in enumerate(history, 1):
+            q = entry.get("question", "")
+            a = entry.get("answer", "")
+            if len(a) > 400:
+                a = a[:400] + "..."
+            parts.append(f"User: {q}\nAssistant: {a}")
+        return "\n\n".join(parts)
+
+    @classmethod
+    def build_prompt(
+        cls,
+        question: str,
+        chunks: list[dict],
+        chat_history: list[dict] = None,
+    ) -> tuple[str, str]:
         """
         Build the system and user prompts for answer generation.
 
         Args:
-            question: The user's question.
-            chunks: List of chunk dicts with 'text', 'source_file', 'subfolder'.
+            question:     The user's original question.
+            chunks:       Retrieved chunk dicts with 'text', 'source_file', 'subfolder'.
+            chat_history: Optional list of last N Q&A dicts from the session.
 
         Returns:
             Tuple of (system_prompt, user_prompt).
         """
         context = cls.format_context(chunks)
-        user_prompt = cls.USER_PROMPT_TEMPLATE.format(
-            context=context,
-            question=question,
-        )
+
+        if chat_history:
+            history_text = cls._format_chat_history(chat_history)
+            user_prompt = cls.USER_PROMPT_WITH_HISTORY_TEMPLATE.format(
+                history=history_text,
+                context=context,
+                question=question,
+            )
+        else:
+            user_prompt = cls.USER_PROMPT_TEMPLATE.format(
+                context=context,
+                question=question,
+            )
+
         return cls.SYSTEM_PROMPT, user_prompt

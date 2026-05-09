@@ -68,9 +68,10 @@ class AIServiceServicer(chatbot_service_pb2_grpc.HuggingFaceServiceServicer):
         logger.info("RAG service initialized successfully.")
 
     def GenerateResponse(self, request, context):
-        logger.info(f"Received prompt: {request.prompt}")
+        session_id = request.session_id or ""
+        logger.info(f"Received prompt: {request.prompt} [session_id={session_id or 'none'}]")
         try:
-            response = self.rag.ask(question=request.prompt)
+            response = self.rag.ask(question=request.prompt, session_id=session_id)
             sources = [
                 chatbot_service_pb2.Source(
                     file=s.get("file", ""),

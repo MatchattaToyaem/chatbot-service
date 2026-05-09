@@ -31,6 +31,8 @@ from ingest.store import ChromaStore
 from rag.reranker import Reranker, RankedResult
 from rag.generator import AnswerGenerator, GeneratedAnswer
 from rag.hybrid_retriever import HybridRetriever
+from rag.session_context import SessionContext
+from rag.question_refiner import QuestionRefiner
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +114,17 @@ class RAGService:
         # gets the same answer. Critical for workplace safety consistency.
         self._generator = AnswerGenerator(
             model=os.getenv("HF_MODEL", "meta-llama/Llama-3.2-3B-Instruct"),
+            temperature=0.0,
+        )
+
+        # Session context fetcher — reads last 3 Q&A from PostgreSQL
+        self._session_ctx = SessionContext(config=self._config)
+
+        # Question refiner — shares the LLM client from the generator
+        self._refiner = QuestionRefiner(
+            client=self._generator._client,
+            model=self._generator._model,
+            provider=self._generator._provider,
             temperature=0.0,
         )
 
@@ -216,16 +229,24 @@ class RAGService:
         question: str,
         retrieval_k: int = None,
         final_k: int = None,
+        session_id: str = "",
     ) -> RAGResponse:
         """
         Full RAG pipeline: retrieve -> rerank -> generate answer.
 
+        When session_id is provided the pipeline:
+          1. Fetches the last 3 Q&A pairs from PostgreSQL (chat_sessions).
+          2. Uses the LLM to determine whether the new question is a follow-up
+             and, if so, rewrites it as a self-contained query for vector search.
+          3. Retrieves documents using the refined query.
+          4. Generates the answer for the *original* question, with the
+             conversation history available as additional context.
+
         Args:
-            question: The user's natural-language question.
-            retrieval_k: Number of initial retrieval results.
-                         Defaults to config RAG_RETRIEVAL_K (50).
-            final_k: Number of chunks sent to the LLM.
-                     Defaults to config RAG_TOP_K (5).
+            question:    The user's natural-language question.
+            retrieval_k: Number of initial retrieval results (default from config).
+            final_k:     Number of chunks sent to the LLM (default from config).
+            session_id:  Chat session UUID; empty string skips context retrieval.
 
         Returns:
             RAGResponse with answer, sources, and confidence.
@@ -235,8 +256,22 @@ class RAGService:
         if final_k is None:
             final_k = self._config.rag.top_k
 
-        # Step 1+2: Retrieve and rerank
-        reranked = self.retrieve(question, retrieval_k, final_k)
+        # Step 1: Fetch conversation history (gracefully returns [] on miss/error)
+        chat_history = self._session_ctx.get_last_n(session_id, n=3)
+
+        # Step 2: Refine question for vector search when history is available.
+        # refined_question is used only for retrieval; the original question is
+        # still what the answer generator is told to answer.
+        if chat_history:
+            retrieval_question, is_relevant = self._refiner.refine(question, chat_history)
+            if not is_relevant:
+                # New topic — drop history so the generator doesn't confuse it
+                chat_history = []
+        else:
+            retrieval_question = question
+
+        # Step 3: Retrieve using the (possibly refined) query
+        reranked = self.retrieve(retrieval_question, retrieval_k, final_k)
 
         if not reranked:
             return RAGResponse(
@@ -249,8 +284,10 @@ class RAGService:
                 reranked_count=0,
             )
 
-        # Step 3: Generate answer
-        generated = self._generator.generate(question, reranked)
+        # Step 4: Generate answer for the original question with optional history
+        generated = self._generator.generate(
+            question, reranked, chat_history=chat_history or None
+        )
 
         return RAGResponse(
             question=question,

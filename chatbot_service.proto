@@ -8,6 +8,7 @@ service HuggingFaceService {
 
 message PromptRequest {
   string prompt = 1;
+  string session_id = 2;
 }
 
 message Source {

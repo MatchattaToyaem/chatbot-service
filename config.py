@@ -40,6 +40,17 @@ class RAGConfig:
 
 
 @dataclass(frozen=True)
+class PostgresConfig:
+    """PostgreSQL connection settings (for chat history retrieval)."""
+    host: str = os.getenv("POSTGRES_HOST", "localhost")
+    port: int = int(os.getenv("POSTGRES_PORT", "5432"))
+    db: str = os.getenv("POSTGRES_DB", "chatdb")
+    user: str = os.getenv("POSTGRES_USER", "postgres")
+    password: str = os.getenv("POSTGRES_PASSWORD", "")
+    sslmode: str = os.getenv("POSTGRES_SSL", "prefer")
+
+
+@dataclass(frozen=True)
 class ServerConfig:
     """FastAPI server settings."""
     host: str = os.getenv("SERVER_HOST", "0.0.0.0")
@@ -54,6 +65,7 @@ class AppConfig:
         self.embedding = EmbeddingConfig()
         self.rag = RAGConfig()
         self.server = ServerConfig()
+        self.postgres = PostgresConfig()
 
     def summary(self) -> dict:
         """Return a dict summary of current config (safe for logging)."""
@@ -66,4 +78,6 @@ class AppConfig:
             "embedding_dimension": self.embedding.dimension,
             "rag_retrieval_k": self.rag.retrieval_k,
             "rag_top_k": self.rag.top_k,
+            "postgres_host": self.postgres.host,
+            "postgres_db": self.postgres.db,
         }

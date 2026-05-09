@@ -120,13 +120,15 @@ class AnswerGenerator:
         self,
         question: str,
         reranked_results: list,
+        chat_history: list[dict] = None,
     ) -> GeneratedAnswer:
         """
         Generate an answer from reranked retrieval results.
 
         Args:
-            question: The user's question.
+            question:         The user's original question.
             reranked_results: List of RankedResult objects from the reranker.
+            chat_history:     Optional last N Q&A dicts for conversational context.
 
         Returns:
             GeneratedAnswer with the response, sources, and confidence.
@@ -155,8 +157,10 @@ class AnswerGenerator:
                     "chunk_id": r.chunk_id,
                 })
 
-        # Build prompt
-        system_prompt, user_prompt = PromptTemplates.build_prompt(question, chunks)
+        # Build prompt (include chat history when available)
+        system_prompt, user_prompt = PromptTemplates.build_prompt(
+            question, chunks, chat_history=chat_history
+        )
         confidence = self._compute_confidence(reranked_results)
         messages = [
             {"role": "system", "content": system_prompt},

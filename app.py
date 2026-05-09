@@ -98,6 +98,7 @@ class SearchResponse(BaseModel):
 class AskRequest(BaseModel):
     question: str = Field(..., min_length=1)
     top_k: Optional[int] = Field(5, ge=1, le=10)
+    session_id: Optional[str] = Field(None, description="Chat session UUID for context-aware answers")
 
 
 # CHANGED: Clean response for client-facing use
@@ -163,7 +164,10 @@ async def ask(request: AskRequest):
     """
     try:
         response = rag.ask(
-            question=request.question, retrieval_k=20, final_k=request.top_k,
+            question=request.question,
+            retrieval_k=20,
+            final_k=request.top_k,
+            session_id=request.session_id or "",
         )
     except Exception as e:
         logger.error("RAG pipeline failed: %s", e)

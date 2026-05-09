@@ -27,6 +27,9 @@ python-dotenv>=1.0.0
 
 grpcio>=1.60.0
 protobuf>=6.31.1
+
+# PostgreSQL client (for chat history retrieval from chat_sessions table)
+psycopg2-binary>=2.9.0
 # Document extraction (ingest)
 pdfplumber>=0.11.0
 python-docx>=1.1.0

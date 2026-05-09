@@ -41,7 +41,7 @@ properties:
           - name: CHROMA_MODE
             value: "http"
           - name: CHROMADB_HOST
-            value: "20.248.237.254"
+            value: "4.254.38.241"
           - name: CHROMADB_PORT
             value: "8000"
           - name: CHROMADB_SSL
