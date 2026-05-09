@@ -7,6 +7,9 @@ Takes retrieved and reranked document chunks, builds a domain-specific
 prompt, and generates a grounded answer via HuggingFace InferenceClient.
 Includes confidence scoring based on retrieval quality.
 
+CHANGES (v2.2 — 05 May 2026):
+  - Added document_path (full file path) to sources for frontend document display
+  - Added seed=42 to LLM calls for deterministic answers
 CHANGES (v2.1 — 24 Apr 2026):
   - Default temperature changed from 0.1 to 0.0 for consistent answers
   - Sources output now includes clean document names (not raw paths)
@@ -152,6 +155,7 @@ class AnswerGenerator:
                 seen_files.add(raw_file)
                 sources.append({
                     "file": self._clean_source_name(raw_file, subfolder),
+                    "document_path": raw_file,
                     "subfolder": subfolder,
                     "score": round(r.reranked_score, 3),
                     "chunk_id": r.chunk_id,
@@ -181,6 +185,7 @@ class AnswerGenerator:
                     messages=messages,
                     max_tokens=self._max_tokens,
                     temperature=self._temperature,
+                    seed=42,
                 )
             answer = response.choices[0].message.content
             prompt_tokens = getattr(response.usage, "prompt_tokens", None)
