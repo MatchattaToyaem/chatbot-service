@@ -19,6 +19,12 @@ properties:
       - name: azure-ai-key
         keyVaultUrl: https://ai-platform-keyvault-01.vault.azure.net/secrets/azure-ai-access-key
         identity: system
+      - name: db-username
+        keyVaultUrl: https://ai-platform-keyvault-01.vault.azure.net/secrets/db-username
+        identity: System
+      - name: db-password
+        keyVaultUrl: https://ai-platform-keyvault-01.vault.azure.net/secrets/db-password
+        identity: System
     ingress:
       external: true
       targetPort: 50051
@@ -64,6 +70,18 @@ properties:
             value: "http://ollama-service.internal.proudground-90080d26.australiaeast.azurecontainerapps.io"
           - name: LLM_MODEL
             value: "meta-llama/Llama-3.1-8B"
+          - name: POSTGRES_HOST
+            value: db-host
+          - name: POSTGRES_PORT
+            value: "5432"
+          - name: POSTGRES_DB
+            value: "postgres"
+          - name: POSTGRES_USER
+            secretRef: db-username
+          - name: POSTGRES_PASSWORD
+            secretRef: db-password
+          - name: POSTGRES_SSL
+            value: "require"
         volumeMounts:
           - volumeName: app-logs
             mountPath: /var/log/app
