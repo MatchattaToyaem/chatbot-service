@@ -19,6 +19,9 @@ properties:
       - name: azure-ai-key
         keyVaultUrl: https://ai-platform-keyvault-01.vault.azure.net/secrets/azure-ai-access-key
         identity: system
+      - name: db-host
+        keyVaultUrl: https://ai-platform-keyvault-01.vault.azure.net/secrets/db-host
+        identity: System
       - name: db-username
         keyVaultUrl: https://ai-platform-keyvault-01.vault.azure.net/secrets/db-username
         identity: System
@@ -71,7 +74,7 @@ properties:
           - name: LLM_MODEL
             value: "meta-llama/Llama-3.1-8B"
           - name: POSTGRES_HOST
-            value: db-host
+            secretRef: db-host
           - name: POSTGRES_PORT
             value: "5432"
           - name: POSTGRES_DB
