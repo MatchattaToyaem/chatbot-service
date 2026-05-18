@@ -142,6 +142,7 @@ class RAGService:
         question: str,
         retrieval_k: int = None,
         final_k: int = None,
+        domain: Optional[str] = None,
     ) -> list[RankedResult]:
         """
         Retrieve relevant chunks for a question using hybrid search.
@@ -171,11 +172,16 @@ class RAGService:
         if self._hybrid is None:
             self._hybrid = HybridRetriever(collection, self._embedder)
 
+        where_filter = {"domain": domain} if domain else None
+        if where_filter:
+            logger.info("Domain filter active: %s", where_filter)
+
         # Hybrid retrieve: BM25 + vector + RRF fusion
         hybrid_hits = self._hybrid.retrieve(
             question=question,
             retrieval_k=retrieval_k,
             final_k=retrieval_k,  # Pass all to allow selection of top final_k
+            where_filter=where_filter,
         )
 
         # Convert hybrid results to standard format
@@ -230,6 +236,7 @@ class RAGService:
         retrieval_k: int = None,
         final_k: int = None,
         session_id: str = "",
+        domain: Optional[str] = None,
     ) -> RAGResponse:
         """
         Full RAG pipeline: retrieve -> rerank -> generate answer.
@@ -271,7 +278,7 @@ class RAGService:
             retrieval_question = question
 
         # Step 3: Retrieve using the (possibly refined) query
-        reranked = self.retrieve(retrieval_question, retrieval_k, final_k)
+        reranked = self.retrieve(retrieval_question, retrieval_k, final_k, domain=domain)
 
         if not reranked:
             return RAGResponse(

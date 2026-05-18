@@ -41,11 +41,17 @@ logger = logging.getLogger(__name__)
 config = AppConfig()
 rag = RAGService(config)
 
+# Domain filter — set RAG_DOMAIN=IMS or RAG_DOMAIN=Service in the environment
+# to restrict retrieval to one SharePoint folder. Leave unset to search all.
+_raw_domain = os.getenv("RAG_DOMAIN", "").strip()
+RAG_DOMAIN: str | None = _raw_domain if _raw_domain else None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting O'Connors IMS Chatbot Agent")
     logger.info("Config: %s", config.summary())
+    logger.info("Domain filter: %s", RAG_DOMAIN or "all (RAG_DOMAIN not set)")
     try:
         health = rag.health_check()
         logger.info("Health check: %s", health)
@@ -137,6 +143,7 @@ async def search(request: SearchRequest):
     try:
         reranked = rag.retrieve(
             question=request.question, retrieval_k=20, final_k=request.top_k,
+            domain=RAG_DOMAIN,
         )
     except Exception as e:
         logger.error("Retrieval failed: %s", e)
@@ -168,6 +175,7 @@ async def ask(request: AskRequest):
             retrieval_k=20,
             final_k=request.top_k,
             session_id=request.session_id or "",
+            domain=RAG_DOMAIN,
         )
     except Exception as e:
         logger.error("RAG pipeline failed: %s", e)

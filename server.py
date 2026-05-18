@@ -61,17 +61,28 @@ def sanity_check():
 class AIServiceServicer(chatbot_service_pb2_grpc.HuggingFaceServiceServicer):
     def __init__(self):
         sanity_check()
+
+        # Domain filter — controls which SharePoint folder's chunks are searched.
+        # Set RAG_DOMAIN=IMS or RAG_DOMAIN=Service in the environment.
+        # Leave unset to search across all ingested documents.
+        raw = os.getenv("RAG_DOMAIN", "").strip()
+        self._domain = raw if raw else None
+        if self._domain:
+            logger.info("Domain filter: RAG_DOMAIN=%s (only '%s' chunks will be searched)", self._domain, self._domain)
+        else:
+            logger.info("Domain filter: RAG_DOMAIN not set — searching all domains")
+
         logger.info("Initializing RAG service...")
         self.rag = RAGService(AppConfig())
         logger.info("Pre-warming BM25 index...")
-        self.rag.retrieve("warmup", retrieval_k=1, final_k=1)
+        self.rag.retrieve("warmup", retrieval_k=1, final_k=1, domain=self._domain)
         logger.info("RAG service initialized successfully.")
 
     def GenerateResponse(self, request, context):
         session_id = request.session_id or ""
-        logger.info(f"Received prompt: {request.prompt} [session_id={session_id or 'none'}]")
+        logger.info(f"Received prompt: {request.prompt} [session_id={session_id or 'none'}, domain={self._domain or 'all'}]")
         try:
-            response = self.rag.ask(question=request.prompt, session_id=session_id)
+            response = self.rag.ask(question=request.prompt, session_id=session_id, domain=self._domain)
             sources = [
                 chatbot_service_pb2.Source(
                     file=s.get("document_path", s.get("file", "")),

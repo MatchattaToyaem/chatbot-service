@@ -65,9 +65,15 @@ class HybridRetriever:
         question: str,
         retrieval_k: int = 30,
         final_k: int = 5,
+        where_filter: dict | None = None,
     ) -> list[dict]:
         """
         Hybrid retrieve: vector + BM25 with RRF fusion.
+
+        Args:
+            where_filter: optional ChromaDB metadata filter, e.g.
+                          {"domain": "Service"} or {"domain": "IMS"}.
+                          Applied to both vector search and BM25 post-filtering.
 
         Returns list of dicts with keys:
             chunk_id, document, metadata, distance, rrf_score
@@ -76,11 +82,14 @@ class HybridRetriever:
 
         # --- Vector search ---
         query_embedding = self._embedder.embed_query(question)
-        vector_results = self._collection.query(
+        vector_query_kwargs = dict(
             query_embeddings=[query_embedding],
             n_results=retrieval_k,
             include=["documents", "metadatas", "distances"],
         )
+        if where_filter:
+            vector_query_kwargs["where"] = where_filter
+        vector_results = self._collection.query(**vector_query_kwargs)
 
         vector_ranked = {}
         vector_data = {}
@@ -101,6 +110,18 @@ class HybridRetriever:
             key=lambda i: bm25_raw[i],
             reverse=True,
         )[:retrieval_k]
+
+        # Post-filter BM25 results to match the same domain constraint used
+        # for vector search. BM25 index is built from all chunks, so we filter
+        # here instead of rebuilding per-domain.
+        if where_filter:
+            top_indices = [
+                idx for idx in top_indices
+                if all(
+                    self._doc_metas[idx].get(k) == v
+                    for k, v in where_filter.items()
+                )
+            ]
 
         bm25_ranked = {}
         bm25_data = {}
