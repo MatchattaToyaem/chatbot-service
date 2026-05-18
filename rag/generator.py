@@ -141,7 +141,7 @@ class AnswerGenerator:
         seen_files = set()
 
         for r in reranked_results:
-            raw_file = r.metadata.get("source_file", "Unknown")
+            raw_file = r.metadata.get("source") or r.metadata.get("source_file", "Unknown")
             subfolder = r.metadata.get("subfolder", "")
 
             chunks.append({
