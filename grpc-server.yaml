@@ -68,7 +68,7 @@ properties:
           - name: AZURE_FOUNDRY_ENDPOINT
             value: "https://ai-matchattatoyaem17868ai923534470836.services.ai.azure.com/openai/v1/"
           - name: AZURE_FOUNDRY_MODEL
-            value: "Llama-3.3-70B-Instruct"
+            value: "mistral-small-2503"
           - name: OLLAMA_ENDPOINT
             value: "http://ollama-service.internal.proudground-90080d26.australiaeast.azurecontainerapps.io"
           - name: LLM_MODEL
