@@ -97,9 +97,12 @@ class AnswerGenerator:
     def _compute_confidence(self, reranked_results: list) -> float:
         if not reranked_results:
             return 0.0
+        # RRF scores max out at 2/(60+1) ≈ 0.033 (rank-0 in both retrievers).
+        # Normalize so that score maps to [0, 1] meaningfully.
+        _MAX_RRF = 2.0 / 61
         scores = [r.reranked_score for r in reranked_results]
         avg_score = sum(scores) / len(scores)
-        confidence = min(1.0, max(0.0, avg_score))
+        confidence = min(1.0, max(0.0, avg_score / _MAX_RRF))
         if reranked_results[0].boost_reasons:
             confidence = min(1.0, confidence + 0.05)
         return round(confidence, 3)
