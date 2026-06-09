@@ -192,6 +192,7 @@ class RAGService:
                 "document": h["document"],
                 "metadata": h["metadata"],
                 "distance": h.get("distance", 0.0),
+                "rrf_score": h.get("rrf_score", 0.0),
             })
 
         logger.info("Hybrid retrieved %d chunks for: '%s'", len(hits), question[:60])
